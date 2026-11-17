@@ -1,83 +1,68 @@
 """
-프로그램 테스트용 샘플 이미지 생성.
+프로그램 테스트용 샘플 이미지 생성 (실제 카메라 이미지 스타일).
 
-생산 라인 카메라 이미지처럼, 큰 이미지의 거의 같은 위치에 인쇄 문자(Lot/날짜 등)가 있고
-그 바깥에도 다른 글자(방해 문자)가 있는 이미지를 만든다. 같은 ROI 하나로 모든 이미지를 읽어 볼 수 있다.
+assets/plate_clean.png (실제 이미지에서 영숫자 인쇄만 지운 바탕) 위에
+박스 10개 모두 같은 제조번호/사용기한을 찍는다. 일부 이미지는 "쓸림"을 넣는다.
+  - sample_01~04: 정상
+  - sample_05~08: 움직임 번짐 (가로 방향으로 글자가 끌림)
+  - sample_09~12: 인쇄 문질림 (일부 박스의 획이 지워지거나 번짐)
 
-    python make_samples.py --out ../samples --count 12
+    python make_samples.py --out ../samples
 """
 import argparse
 import random
-import re
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image
 
-import gen_synth as gs
+import gen_label as gl
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="../samples")
-    ap.add_argument("--count", type=int, default=12)
     ap.add_argument("--fonts-dir", default=None)
     ap.add_argument("--seed", type=int, default=2026)
     args = ap.parse_args()
 
+    gl.init_worker(args.fonts_dir, args.seed)
     random.seed(args.seed)
     np.random.seed(args.seed)
-    fonts = gs.find_fonts(args.fonts_dir)
-    mono_fonts = [f for f in fonts if "mono" in f.lower() and "bold" in f.lower() and "extrabold" not in f.lower()] or fonts
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    W, H = 1280, 960
-    roi_x, roi_y, roi_w, roi_h = 380, 380, 600, 200  # 인쇄 영역 (이미지마다 약간 흔들림)
-    base_bg = np.ones((H, W, 3), np.float32) * np.array([196, 170, 128], np.float32)  # 골판지 톤
-    base_bg = base_bg * (0.9 + 0.15 * gs.smooth_noise(W, H, 4)[..., None])
+    # 실제 인쇄와 비슷한 가는 산세리프 폰트 우선
+    prefer = [f for f in gl._G["code_fonts"]
+              if any(k in Path(f).name for k in ("DejaVuSans.ttf", "Inter-Light", "LiberationSans-Regular"))]
 
     answers = []
-    for i in range(args.count):
-        bg = base_bg * random.uniform(0.85, 1.1)
-        img = Image.fromarray(np.clip(bg, 0, 255).astype(np.uint8))
-        d = ImageDraw.Draw(img)
+    for i in range(12):
+        lot = "GWTB016P" if i % 3 == 0 else gl.random_lot()[:9]
+        date = "{}.{:02d}.{:02d}".format(random.randint(2027, 2032), random.randint(1, 12), random.randint(1, 28))
 
-        # 라벨/제품 영역 느낌의 큰 사각형과 방해 글자 (ROI 밖)
-        d.rectangle([80, 80, W - 80, H - 80], outline=(60, 60, 60), width=4)
-        f_big = ImageFont.truetype(random.choice(fonts), 64)
-        d.text((120, 120), "PRODUCT " + "".join(random.choice("ABCDEFGHJKLMNPRSTUVWXYZ") for _ in range(3)),
-               font=f_big, fill=(30, 30, 120))
-        f_small = ImageFont.truetype(random.choice(fonts), 34)
-        d.text((120, 800), "NET 500G  MADE IN KOREA", font=f_small, fill=(40, 40, 40))
-        d.text((900, 140), str(random.randint(1000, 9999)), font=f_small, fill=(120, 30, 30))
+        style = gl.CodeStyle(h=random.uniform(28, 31), font_path=random.choice(prefer) if prefer else None)
+        style.pitch_ratio = random.uniform(1.0, 1.05)
+        style.dot_ratio = 1.0
+        style.color = random.uniform(225, 250)
+        style.alpha = 1.0
 
-        # 인쇄 문자 (ROI 안): Lot / 유통기한 형식, 도트 또는 일반 폰트
-        lot = "L" + "".join(random.choice("0123456789") for _ in range(4)) + random.choice("ABCDEFGH") + \
-              "".join(random.choice("0123456789") for _ in range(2))
-        exp = "EXP 20{:02d} {:02d} {:02d}".format(random.randint(26, 29), random.randint(1, 12), random.randint(1, 28))
-        size = 54
-        font = ImageFont.truetype(random.choice(mono_fonts), size)
-        layer = Image.new("L", (roi_w, roi_h), 0)
-        ld = ImageDraw.Draw(layer)
-        ld.text((20, 20), lot, font=font, fill=255)
-        ld.text((20, 105), exp, font=font, fill=255)
-        if i % 2 == 0:
-            layer = gs.dot_matrix(layer, size * 0.75)
-        layer = layer.rotate(random.uniform(-2, 2), resample=Image.BILINEAR)
-        ox, oy = roi_x + random.randint(-15, 15), roi_y + random.randint(-10, 10)
-        ink = Image.new("RGB", layer.size, (15, 15, 15))
-        img.paste(ink, (ox, oy), layer)
-
-        if random.random() < 0.5:
-            img = img.filter(ImageFilter.GaussianBlur(random.uniform(0.3, 1.0)))
-        arr = np.asarray(img, np.float32) + np.random.normal(0, 4, (H, W, 3))
-        img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
-        name = out / f"sample_{i + 1:02d}.jpg"
-        img.save(name, quality=90)
-        answers.append(f"{name.name}\t{lot}\t{exp}")
-        print(name, lot, exp)
-    (out / "answers.txt").write_text("\n".join(answers) + "\n", encoding="utf-8")
+        img = gl._G["plate"] * random.uniform(0.95, 1.05)
+        text_mask = np.zeros_like(img)
+        boxes = []
+        rub = 0.5 if i >= 8 else 0.0
+        for b in gl._G["plate_boxes"]:
+            gl.draw_box_text(text_mask, boxes, b, style, None, texts=[lot, date], rub_p=rub, x_jitter=30)
+        res = gl.compose(img, text_mask, style)
+        if 4 <= i < 8:
+            res = gl.motion_blur(res, style.h * random.uniform(0.25, 0.5), random.uniform(-2, 2))
+        res = res + np.random.normal(0, 2.5, res.shape)
+        name = f"sample_{i + 1:02d}.png"
+        Image.fromarray(np.clip(res, 0, 255).astype(np.uint8)).save(out / name)
+        kind = "정상" if i < 4 else ("움직임 번짐" if i < 8 else "인쇄 문질림")
+        answers.append(f"{name}\t{lot}\t{date}\t{kind}")
+        print(answers[-1])
+    (out / "answers.txt").write_text("파일\t제조번호\t사용기한\t종류\n" + "\n".join(answers) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

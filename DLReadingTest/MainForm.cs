@@ -6,7 +6,6 @@ using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using DLReadingTest.Controls;
@@ -429,12 +428,31 @@ namespace DLReadingTest
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
-        [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
-        private static extern int StrCmpLogicalW(string x, string y);
-
-        private static int NaturalCompare(string a, string b)
+        /// <summary>파일명 자연 정렬: 숫자 부분은 값으로 비교 (img2 &lt; img10)</summary>
+        private static int NaturalCompare(string pathA, string pathB)
         {
-            return StrCmpLogicalW(Path.GetFileName(a), Path.GetFileName(b));
+            string a = Path.GetFileName(pathA), b = Path.GetFileName(pathB);
+            int i = 0, j = 0;
+            while (i < a.Length && j < b.Length)
+            {
+                if (char.IsDigit(a[i]) && char.IsDigit(b[j]))
+                {
+                    int si = i, sj = j;
+                    while (i < a.Length && char.IsDigit(a[i])) i++;
+                    while (j < b.Length && char.IsDigit(b[j])) j++;
+                    string na = a.Substring(si, i - si).TrimStart('0'), nb = b.Substring(sj, j - sj).TrimStart('0');
+                    int c = na.Length != nb.Length ? na.Length.CompareTo(nb.Length) : string.CompareOrdinal(na, nb);
+                    if (c != 0) return c;
+                }
+                else
+                {
+                    int c = char.ToUpperInvariant(a[i]).CompareTo(char.ToUpperInvariant(b[j]));
+                    if (c != 0) return c;
+                    i++;
+                    j++;
+                }
+            }
+            return (a.Length - i).CompareTo(b.Length - j);
         }
     }
 }

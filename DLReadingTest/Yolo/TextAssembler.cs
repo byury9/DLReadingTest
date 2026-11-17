@@ -54,25 +54,54 @@ namespace DLReadingTest.Yolo
         public static string[] Assemble(IEnumerable<Detection> detections, out List<Detection> ordered)
         {
             List<List<Detection>> lines = GroupLines(detections);
-            ordered = lines.SelectMany(l => l).ToList();
+            ordered = new List<Detection>();
+            var result = new List<string>();
 
-            var result = new string[lines.Count];
-            for (int i = 0; i < lines.Count; i++)
+            foreach (List<Detection> line in lines)
             {
-                List<Detection> line = lines[i];
-                float medianW = Median(line.Select(d => d.Box.Width));
                 float medianH = Median(line.Select(d => d.Box.Height));
-                float gapLimit = Math.Max(medianW, medianH * 0.5f) * 0.8f;
+
+                // 자간이 넓은 인쇄(잉크젯/레이저)에서도 글자마다 공백이 들어가지 않도록
+                // 글자 중심 간격(pitch)의 평소 값보다 확실히 넓은 곳에만 공백을 넣는다.
+                var pitches = new List<float>();
+                for (int k = 1; k < line.Count; k++)
+                    pitches.Add(line[k].Center.X - line[k - 1].Center.X);
+                float basePitch = pitches.Count > 0 ? Percentile(pitches, 0.35f) : 0f;
+                // 아주 큰 간격(옆 박스 등)은 별도의 줄로 분리
+                float splitGap = Math.Max(basePitch * 4f, medianH * 3f);
+
                 var sb = new StringBuilder();
                 for (int k = 0; k < line.Count; k++)
                 {
-                    if (k > 0 && line[k].Box.Left - line[k - 1].Box.Right > gapLimit)
-                        sb.Append(' ');
+                    if (k > 0)
+                    {
+                        float pitch = line[k].Center.X - line[k - 1].Center.X;
+                        float gap = line[k].Box.Left - line[k - 1].Box.Right;
+                        if (gap > splitGap)
+                        {
+                            result.Add(sb.ToString());
+                            sb.Clear();
+                        }
+                        else if (pitch > basePitch * 1.6f && gap > medianH * 0.35f)
+                        {
+                            sb.Append(' ');
+                        }
+                    }
+                    line[k].Line = result.Count;
+                    ordered.Add(line[k]);
                     sb.Append(line[k].Label);
                 }
-                result[i] = sb.ToString();
+                result.Add(sb.ToString());
             }
-            return result;
+            return result.ToArray();
+        }
+
+        private static float Percentile(IEnumerable<float> values, float p)
+        {
+            float[] v = values.OrderBy(x => x).ToArray();
+            if (v.Length == 0) return 0;
+            int idx = (int)Math.Round((v.Length - 1) * p);
+            return v[Math.Max(0, Math.Min(v.Length - 1, idx))];
         }
 
         private static float Median(IEnumerable<float> values)

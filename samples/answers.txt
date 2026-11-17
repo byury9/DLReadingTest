@@ -1,12 +1,13 @@
-sample_01.jpg	L9879H30	EXP 2026 02 10
-sample_02.jpg	L6440D30	EXP 2026 04 06
-sample_03.jpg	L4216D11	EXP 2026 02 19
-sample_04.jpg	L3212G68	EXP 2029 10 06
-sample_05.jpg	L5029F29	EXP 2027 01 16
-sample_06.jpg	L9439E91	EXP 2026 10 01
-sample_07.jpg	L9180F35	EXP 2026 02 19
-sample_08.jpg	L7420G17	EXP 2029 07 15
-sample_09.jpg	L5776D11	EXP 2028 06 22
-sample_10.jpg	L1274D54	EXP 2028 02 13
-sample_11.jpg	L1723F16	EXP 2029 08 27
-sample_12.jpg	L4859F45	EXP 2029 08 24
+파일	제조번호	사용기한	종류
+sample_01.png	GWTB016P	2027.06.17	정상
+sample_02.png	UATUP582Q	2028.06.18	정상
+sample_03.png	AFAZCW	2029.07.09	정상
+sample_04.png	GWTB016P	2031.05.22	정상
+sample_05.png	QY16KGD6O	2027.01.07	움직임 번짐
+sample_06.png	WVWGP7VTY	2032.06.11	움직임 번짐
+sample_07.png	GWTB016P	2031.10.26	움직임 번짐
+sample_08.png	MQVN6THRI	2028.02.24	움직임 번짐
+sample_09.png	RGDI8509	2029.11.06	인쇄 문질림
+sample_10.png	GWTB016P	2029.12.18	인쇄 문질림
+sample_11.png	RLS1WN9	2031.06.27	인쇄 문질림
+sample_12.png	43MTY3H	2028.04.20	인쇄 문질림

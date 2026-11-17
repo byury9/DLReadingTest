@@ -3,9 +3,9 @@ YOLO26 문자 검출 모델 학습 + ONNX export.
 
 사용 예:
     # 1) 합성 데이터 생성
-    python gen_synth.py --out datasets/alnum --train 6000 --val 600
+    python gen_label.py --out datasets/label --train 4000 --val 400
     # 2) 학습 (GPU 가 있으면 --device 0)
-    python train.py --data datasets/alnum/data.yaml --epochs 60 --imgsz 640 --device 0
+    python train.py --data datasets/label/data.yaml --epochs 60 --imgsz 640 --device 0
     # 3) 결과 ONNX 를 C# 프로그램의 Models 폴더로 복사
     #    runs/alnum/weights/best.onnx -> DLReadingTest/Models/alnum_yolo26n.onnx
 
@@ -22,7 +22,7 @@ from ultralytics import YOLO
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", default="datasets/alnum/data.yaml")
+    ap.add_argument("--data", default="datasets/label/data.yaml")
     ap.add_argument("--weights", default="yolo26n.pt", help="시작 가중치 (yolo26n.pt / yolo26s.pt / 이전 best.pt)")
     ap.add_argument("--epochs", type=int, default=60)
     ap.add_argument("--imgsz", type=int, default=640)

@@ -21,41 +21,58 @@ YOLO26 딥러닝 모델로 이미지 속 **영문 대문자(A-Z)와 숫자(0-9)*
 
 ### 샘플 이미지 (`samples/`)
 
-생산 라인 카메라 이미지를 흉내 낸 합성 이미지 12장입니다. 가운데에 Lot 번호와 유통기한이 인쇄돼 있고
-(홀수 번호는 잉크젯 도트 방식, 짝수 번호는 일반 인쇄체), 바깥에는 `PRODUCT ...`, `NET 500G ...` 같은 방해 글자가 있습니다.
-가운데 인쇄 영역에만 ROI를 잡으면 방해 글자를 빼고 읽는 걸 확인할 수 있습니다. 정답은 `samples/answers.txt` 에 있습니다.
-(`training/make_samples.py` 로 다시 만들 수 있습니다.)
+- `real_2025-05-28_10-12-15.bmp`: 실제 카메라 이미지 (박스 10개, 제조번호 `GWTB016P` / 사용기한 `2030.03.12`)
+- `sample_01~12.png`: 실제 이미지에서 영숫자 인쇄만 지운 바탕에 다른 값을 찍은 합성 이미지
+  - 01~04 정상, 05~08 움직임 번짐(가로로 글자가 끌림), 09~12 인쇄 문질림(획 일부 지워짐/번짐)
+  - 정답은 `samples/answers.txt` (`training/make_samples.py` 로 다시 만들 수 있음)
+
+박스 하나의 인쇄 영역에 ROI를 잡으면 한글 라벨(`제조번호 :` 등)을 빼고 그 박스만 읽습니다.
+ROI 없이 전체를 읽으면 박스 10개를 모두 읽고, 결과는 줄 단위(왼쪽 박스 → 오른쪽 박스 순)로 나옵니다.
 
 ## 빌드 / 실행
 
 1. Visual Studio 2022 (".NET 데스크톱 개발" 워크로드)에서 `DLReadingTest.sln` 열기
 2. 빌드하면 NuGet 패키지(`Microsoft.ML.OnnxRuntime`)가 자동 복원되고, `Models\*.onnx` 가 출력 폴더로 복사됨
-3. 실행 → `폴더 열기` → `ROI 설정` 으로 글자 영역 지정 → `읽기`
+3. 실행 → `폴더 열기`(예: `samples`) → `ROI 설정` 으로 글자 영역 지정 → `읽기`
 
 > 64비트 전용(x64)입니다. ONNX Runtime 1.20 이상은 Visual C++ 재배포 패키지(2015-2022 x64)가 필요할 수 있습니다.
 
 ## 모델 / 학습 (`training/`)
 
-공개된 "알파벳/숫자 읽기" YOLO 모델이 따로 없어서, 글자 하나하나를 객체(36 클래스)로 검출하도록
-**YOLO26n**(Ultralytics, NMS-free, CPU/엣지 추론과 작은 객체에 강함)을 합성 데이터로 학습했습니다.
+공개된 "알파벳/숫자 읽기" YOLO 모델이 따로 없어서, 글자 하나하나를 객체(36 클래스: `0-9`, `A-Z`)로 검출하도록
+**YOLO26n**(Ultralytics, NMS-free, CPU/엣지 추론과 작은 객체에 강함)을 학습했습니다.
 검출된 글자는 위→아래 줄, 줄 안에서 왼쪽→오른쪽 순서로 이어 붙여 문자열로 만듭니다.
+`.` 은 읽지 않으므로 날짜 `2030.03.12` 는 `2030 03 12` 처럼 나옵니다(넓은 간격에 공백).
 
-포함된 모델은 **합성 이미지로만 학습한 데모 모델**입니다. 실제 현장 이미지(제품 인쇄, 잉크젯 Lot 번호 등)는
-조명, 재질, 폰트가 달라서 인식률이 떨어질 수 있습니다. 현장 이미지를 수십~수백 장 라벨링해서 추가 학습하는 것을 권장합니다.
+### 학습 데이터 (`gen_label.py`)
+
+실제 카메라 이미지에 맞춰 만든 합성 데이터입니다.
+
+| 구성 | 비율 | 내용 |
+|---|---|---|
+| 실제 바탕 | 55% | `assets/plate_clean.png` (실제 이미지에서 영숫자만 지운 바탕) 20개 인쇄 위치에 무작위 제조번호/날짜를 흰색 단선 글씨, 넓은 자간으로 인쇄 |
+| 합성 박스 | 30% | 어두운 박스 + 한글 라벨(`제조번호 :` `사용기한 :` 등, 라벨링 안 함) + 코드. 박스 개수/크기/밝기 다양 |
+| 범용 | 15% | `gen_synth.py` 의 다양한 폰트/배경 (일반화용) |
+
+- **움직임 번짐**(40%): 컨베이어 방향(가로)으로 글자 높이의 10~60% 길이만큼 끌림, 가끔 세로/사선으로 짧게
+- **인쇄 문질림**(박스별 30%): 긁힌 줄무늬로 획 일부 지워짐, 한쪽으로 번진 꼬리, 잉크 빠짐
+- 크롭: 박스 하나 / 이웃 박스 여러 개 / 전체 이미지
+- 밝기, 감마, 노이즈, 블러, JPEG 압축
 
 ```bash
 cd training
 pip install ultralytics onnx onnxslim
-python gen_synth.py --out datasets/alnum --train 6000 --val 600           # 합성 데이터 생성
-python train.py --data datasets/alnum/data.yaml --epochs 60 --device 0     # GPU 학습 (CPU 는 --device cpu)
+python gen_label.py --out datasets/label --train 4000 --val 400                      # 데이터 생성
+python train.py --data datasets/label/data.yaml --imgsz 640 --epochs 60 --device 0   # GPU 학습 (CPU 는 --device cpu)
 ```
 
-- 학습이 끝나면 `runs/alnum/weights/best.onnx` 가 `DLReadingTest/Models/alnum_yolo26n.onnx` 로 복사됩니다.
-- Windows 에서 `gen_synth.py` 를 실행하면 `C:\Windows\Fonts` 의 폰트를 자동으로 사용합니다.
-- 현장 이미지 라벨링: [Label Studio](https://labelstud.io), [CVAT](https://www.cvat.ai) 등에서 YOLO 형식으로 내보내고
-  `data.yaml` 의 `train`/`val` 에 경로를 추가하거나, `--weights runs/alnum/weights/best.pt` 로 이어서 학습합니다.
-  클래스 순서는 `0-9` 다음 `A-Z` 입니다(클래스 번호 0~35).
-- 소문자 등 다른 문자를 추가하려면 `gen_synth.py --charset` 으로 문자 집합을 바꿔서 다시 학습합니다.
+- 학습이 끝나면 `best.onnx` 가 `DLReadingTest/Models/alnum_yolo26n.onnx` 로 복사됩니다.
+- Windows 에서 실행하면 `C:\Windows\Fonts` 의 폰트(맑은 고딕 등)를 자동으로 사용합니다.
+- **현장 이미지 추가 학습 (권장)**: 실제 이미지를 수십~수백 장 라벨링하면 인식률이 크게 올라갑니다.
+  [Label Studio](https://labelstud.io), [CVAT](https://www.cvat.ai) 등에서 글자마다 박스를 그려 YOLO 형식으로 내보내고
+  `data.yaml` 의 `train` 에 폴더를 추가하거나, `--weights <이전 best.pt>` 로 이어서 학습합니다.
+  클래스 번호는 `0-9` → 0~9, `A-Z` → 10~35 입니다.
+- 다른 제품/인쇄 형태가 생기면 `assets/` 에 새 바탕(인쇄를 지운 이미지)을 추가하는 방식으로 확장할 수 있습니다.
 
 ### 다른 모델 사용
 
@@ -76,7 +93,12 @@ DLReadingTest/
   Yolo/Detection.cs
   AppSettings.cs                       ini 설정 저장
   Models/alnum_yolo26n.onnx            학습된 문자 검출 모델
+samples/                               테스트 이미지 (실제 1장 + 합성 12장, answers.txt)
 training/
-  gen_synth.py                         합성 학습 데이터 생성기
+  gen_label.py                         제품 박스 인쇄용 학습 데이터 생성기 (쓸림 포함)
+  gen_synth.py                         범용 합성 데이터 생성기
+  make_samples.py                      samples/ 생성기
   train.py                             YOLO26 학습 + ONNX export
+  assets/plate_clean.png               실제 이미지에서 영숫자 인쇄만 지운 바탕
+  assets/plate_slots.json              바탕의 인쇄 위치(20줄)
 ```
