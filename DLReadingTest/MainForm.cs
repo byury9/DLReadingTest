@@ -92,6 +92,7 @@ namespace DLReadingTest
             {
                 Cursor = Cursors.WaitCursor;
                 var det = new YoloDetector(path);
+                det.LabelMap = YoloDetector.ParseLabelMap(_settings.LabelMap);
                 if (_detector != null) _detector.Dispose();
                 _detector = det;
                 _settings.ModelPath = path;

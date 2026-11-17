@@ -32,6 +32,26 @@ namespace DLReadingTest.Yolo
         /// <summary>모델 메타데이터의 설명 (예: "Ultralytics YOLO26n model ...")</summary>
         public string Description { get; private set; }
 
+        /// <summary>
+        /// 읽은 글자를 다른 글자로 바꿔서 내보내는 표. 예: {"O" → "0"} 이면 영문 O 로 검출돼도 숫자 0 으로 표시.
+        /// (모양이 거의 같은 글자 중 실제로 쓰지 않는 쪽을 합칠 때 사용)
+        /// </summary>
+        public Dictionary<string, string> LabelMap { get; set; }
+
+        /// <summary>"O:0,I:1" 형식 문자열을 LabelMap 으로 변환한다.</summary>
+        public static Dictionary<string, string> ParseLabelMap(string text)
+        {
+            var map = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (string.IsNullOrWhiteSpace(text)) return map;
+            foreach (string pair in text.Split(','))
+            {
+                string[] kv = pair.Split(':');
+                if (kv.Length == 2 && kv[0].Trim().Length > 0 && kv[1].Trim().Length > 0)
+                    map[kv[0].Trim()] = kv[1].Trim();
+            }
+            return map;
+        }
+
         public YoloDetector(string modelPath)
         {
             ModelPath = modelPath;
@@ -100,6 +120,8 @@ namespace DLReadingTest.Yolo
                 d.Label = d.ClassId >= 0 && d.ClassId < ClassNames.Length
                     ? ClassNames[d.ClassId]
                     : d.ClassId.ToString(CultureInfo.InvariantCulture);
+                string mapped;
+                if (LabelMap != null && LabelMap.TryGetValue(d.Label, out mapped)) d.Label = mapped;
                 list.Add(d);
             }
 

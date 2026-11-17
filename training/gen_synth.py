@@ -22,6 +22,8 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 DEFAULT_CHARSET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+# 클래스 목록에는 남겨 두되 글자로는 만들지 않을 문자 (예: "O" = 영문 O 는 쓰지 않고 숫자 0 만 사용)
+TEXT_EXCLUDE = ""
 
 # 라틴 문자를 제대로 가진 폰트만 고르기 위한 파일명 패턴
 FONT_ALLOW = re.compile(
@@ -133,6 +135,7 @@ def draw_distractors(img):
 
 # ---------------------------------------------------------------- 텍스트
 def random_text(charset):
+    charset = "".join(c for c in charset if c not in TEXT_EXCLUDE) or charset
     n = random.choices([random.randint(1, 4), random.randint(4, 10), random.randint(10, 16)], weights=[1, 4, 2])[0]
     style = random.random()
     if style < 0.35:  # Lot 번호 / 날짜 스타일

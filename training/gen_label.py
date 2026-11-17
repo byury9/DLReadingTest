@@ -27,6 +27,10 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import gen_synth as gs
 
 CHARSET = gs.DEFAULT_CHARSET
+# 영문 O 는 숫자 0 과 모양이 같고 실제 인쇄에 쓰지 않으므로 만들지 않는다 (0 만 학습).
+# 클래스 번호(36개)는 그대로 두어 기존 모델/프로그램과 호환된다. 프로그램은 LabelMap=O:0 으로 O 를 0 으로 표시.
+EXCLUDE = "O"
+gs.TEXT_EXCLUDE = EXCLUDE
 HERE = Path(__file__).resolve().parent
 ASSETS = HERE / "assets"
 
@@ -88,9 +92,9 @@ def find_korean_fonts(fonts_dir):
 
 # ---------------------------------------------------------------- 텍스트 내용
 # 날짜(숫자 8자)가 박스마다 들어가서 숫자가 영문보다 훨씬 많이 학습된다.
-# 제조번호는 영문 위주로 만들고, 서로 헷갈리기 쉬운 글자(O/Q/C/G, I/J, M/W/V/N, P/B/R/F 등)는 더 자주 넣는다.
-LETTERS = CHARSET[10:]
-HARD_LETTERS = "IOQGCMWJPBFUYVKDRN"
+# 제조번호는 영문 위주로 만들고, 서로 헷갈리기 쉬운 글자(Q/C/G, I/J, M/W/V/N, P/B/R/F 등)는 더 자주 넣는다.
+LETTERS = "".join(c for c in CHARSET[10:] if c not in EXCLUDE)
+HARD_LETTERS = "IQGCMWJPBFUYVKDRN"
 LETTER_W = [3.0 if c in HARD_LETTERS else 1.0 for c in LETTERS]
 
 

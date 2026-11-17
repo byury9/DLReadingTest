@@ -16,12 +16,15 @@ namespace DLReadingTest
         public int IntervalMs { get; set; }
         public decimal Confidence { get; set; }
         public bool AutoRead { get; set; }
+        /// <summary>글자 치환 표 (예: "O:0" = 영문 O 를 숫자 0 으로). 비우면 치환 안 함.</summary>
+        public string LabelMap { get; set; }
 
         public AppSettings()
         {
             IntervalMs = 1000;
             Confidence = 0.25m;
             AutoRead = true;
+            LabelMap = "O:0";
         }
 
         private static string FilePath
@@ -51,6 +54,7 @@ namespace DLReadingTest
                     s.Confidence = d;
                 bool b;
                 if (map.TryGetValue("AutoRead", out v) && bool.TryParse(v, out b)) s.AutoRead = b;
+                if (map.TryGetValue("LabelMap", out v)) s.LabelMap = v;
                 if (map.TryGetValue("Roi", out v))
                 {
                     string[] p = v.Split(',');
@@ -78,6 +82,7 @@ namespace DLReadingTest
                 sb.AppendLine("IntervalMs=" + IntervalMs.ToString(CultureInfo.InvariantCulture));
                 sb.AppendLine("Confidence=" + Confidence.ToString(CultureInfo.InvariantCulture));
                 sb.AppendLine("AutoRead=" + AutoRead);
+                sb.AppendLine("LabelMap=" + (LabelMap ?? ""));
                 File.WriteAllText(FilePath, sb.ToString(), Encoding.UTF8);
             }
             catch
