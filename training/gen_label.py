@@ -87,15 +87,31 @@ def find_korean_fonts(fonts_dir):
 
 
 # ---------------------------------------------------------------- 텍스트 내용
+# 날짜(숫자 8자)가 박스마다 들어가서 숫자가 영문보다 훨씬 많이 학습된다.
+# 제조번호는 영문 위주로 만들고, 서로 헷갈리기 쉬운 글자(O/Q/C/G, I/J, M/W/V/N, P/B/R/F 등)는 더 자주 넣는다.
+LETTERS = CHARSET[10:]
+HARD_LETTERS = "IOQGCMWJPBFUYVKDRN"
+LETTER_W = [3.0 if c in HARD_LETTERS else 1.0 for c in LETTERS]
+
+
+def rand_letters(n):
+    return "".join(random.choices(LETTERS, weights=LETTER_W, k=n))
+
+
+def rand_digits(n):
+    return "".join(random.choice(CHARSET[:10]) for _ in range(n))
+
+
 def random_lot():
     k = random.random()
-    if k < 0.45:  # GWTB016P 형식: 영문 4 + 숫자 3 + 영문 1
-        return ("".join(random.choice(CHARSET[10:]) for _ in range(random.randint(3, 5))) +
-                "".join(random.choice(CHARSET[:10]) for _ in range(random.randint(2, 4))) +
-                "".join(random.choice(CHARSET[10:]) for _ in range(random.randint(0, 2))))
-    if k < 0.8:
-        return "".join(random.choice(CHARSET) for _ in range(random.randint(5, 10)))
-    return "".join(random.choice(CHARSET[:10]) for _ in range(random.randint(5, 10)))
+    if k < 0.40:  # GWTB016P 형식: 영문 3~5 + 숫자 2~4 + 영문 0~2
+        return rand_letters(random.randint(3, 5)) + rand_digits(random.randint(2, 4)) + rand_letters(random.randint(0, 2))
+    if k < 0.75:  # 영문만
+        return rand_letters(random.randint(5, 10))
+    if k < 0.95:  # 영문/숫자 섞임 (영문 70%)
+        return "".join(rand_letters(1) if random.random() < 0.7 else rand_digits(1)
+                       for _ in range(random.randint(5, 10)))
+    return rand_digits(random.randint(5, 10))
 
 
 def random_date():
@@ -235,7 +251,9 @@ def draw_box_text(text_mask, boxes, box, style, korean, texts=None, rub_p=0.3, x
     pitch = h * style.pitch_ratio
     if texts is None:
         n_lines = random.choices([1, 2, 3], weights=[1, 8, 1])[0]
-        texts = [random_lot(), random_date(), random_lot()][:n_lines]
+        # 30% 는 날짜 대신 제조번호를 한 줄 더 (영문 비중을 높임)
+        second = random_lot() if random.random() < 0.3 else random_date()
+        texts = [random_lot(), second, random_lot()][:n_lines]
         if n_lines == 1:
             texts = [random.choice([random_lot(), random_date()])]
     n_lines = len(texts)
