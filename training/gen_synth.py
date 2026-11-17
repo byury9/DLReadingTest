@@ -147,23 +147,33 @@ def random_text(charset):
 
 def dot_matrix(mask, char_h):
     """일반 글자 마스크를 잉크젯 도트 매트릭스 스타일로 변환."""
-    pitch = max(2.0, char_h / random.uniform(6.5, 9.0))
-    r = pitch * random.uniform(0.32, 0.48)
+    # 글자 높이가 도트 7~9개가 되도록 격자 간격을 잡고, 격자 한 칸의 잉크 비율이
+    # 임계값 이상이면 그 칸 중심에 도트 하나를 찍는다 (가는/굵은 폰트 모두 안정적)
+    pitch = max(2.0, char_h / random.uniform(7.0, 9.5))
+    r = pitch * random.uniform(0.33, 0.48)
+    thr = random.uniform(0.25, 0.4)
     w, h = mask.size
-    src = np.asarray(mask.filter(ImageFilter.GaussianBlur(pitch * 0.3)), np.float32) / 255.0
+    ox, oy = random.uniform(0, pitch), random.uniform(0, pitch)
+    gw, gh = int((w - ox) / pitch), int((h - oy) / pitch)
+    if gw < 1 or gh < 1:
+        return mask
+    # 가는 폰트(획이 도트 간격보다 훨씬 얇음)는 도트가 사라지므로 획을 먼저 두껍게
+    arr = np.asarray(mask)
+    ys, xs = np.nonzero(arr > 127)
+    if len(xs):
+        box = arr[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+        if (box > 127).mean() < 0.14:
+            k = int(pitch * 0.6) | 1
+            if k >= 3:
+                mask = mask.filter(ImageFilter.MaxFilter(k))
+    region = mask.crop((ox, oy, ox + gw * pitch, oy + gh * pitch))
+    cov = np.asarray(region.resize((gw, gh), Image.BOX), np.float32) / 255.0
     out = Image.new("L", (w, h), 0)
     d = ImageDraw.Draw(out)
-    ox, oy = random.uniform(0, pitch), random.uniform(0, pitch)
-    y = oy
-    while y < h:
-        x = ox
-        yi = int(y)
-        while x < w:
-            if src[yi, int(x)] > 0.45:
-                jx, jy = random.gauss(0, pitch * 0.06), random.gauss(0, pitch * 0.06)
-                d.ellipse([x - r + jx, y - r + jy, x + r + jx, y + r + jy], fill=255)
-            x += pitch
-        y += pitch
+    for gy, gx in zip(*np.nonzero(cov > thr)):
+        x = ox + (gx + 0.5) * pitch + random.gauss(0, pitch * 0.06)
+        y = oy + (gy + 0.5) * pitch + random.gauss(0, pitch * 0.06)
+        d.ellipse([x - r, y - r, x + r, y + r], fill=255)
     return out
 
 
