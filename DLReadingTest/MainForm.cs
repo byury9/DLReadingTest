@@ -42,6 +42,8 @@ namespace DLReadingTest
         public MainForm()
         {
             InitializeComponent();
+            // x64 / x86 빌드 구분 (DLReadingTest.x86 프로젝트는 32비트로 실행됨)
+            Text += Environment.Is64BitProcess ? " [x64]" : " [x86]";
         }
 
         // ================================================================== 시작 / 종료
