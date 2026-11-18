@@ -247,10 +247,14 @@ namespace DLReadingTest.Yolo
                 {
                     cx = data[a]; cy = data[anchors + a]; w = data[2 * anchors + a]; h = data[3 * anchors + a];
                 }
+                var scores = new float[nc];
+                for (int c = 0; c < nc; c++)
+                    scores[c] = transposed ? data[a * channels + 4 + c] : data[(4 + c) * anchors + a];
                 list.Add(new Detection
                 {
                     ClassId = best,
                     Confidence = bestScore,
+                    Scores = scores,
                     Box = new RectangleF(cx - w / 2f, cy - h / 2f, w, h)
                 });
             }

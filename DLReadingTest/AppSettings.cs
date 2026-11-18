@@ -18,6 +18,10 @@ namespace DLReadingTest
         public bool AutoRead { get; set; }
         /// <summary>글자 치환 표 (예: "O:0" = 영문 O 를 숫자 0 으로). 비우면 치환 안 함.</summary>
         public string LabelMap { get; set; }
+        /// <summary>마지막에 입력한 검증할 문자</summary>
+        public string ExpectedText { get; set; }
+        /// <summary>검증 OK 기준: 자리마다 기대 문자 점수가 이 값 이상 (기본 0.10)</summary>
+        public float VerifyPassScore { get; set; }
 
         public AppSettings()
         {
@@ -25,6 +29,8 @@ namespace DLReadingTest
             Confidence = 0.25m;
             AutoRead = true;
             LabelMap = "O:0";
+            ExpectedText = "";
+            VerifyPassScore = 0.10f;
         }
 
         private static string FilePath
@@ -55,6 +61,10 @@ namespace DLReadingTest
                 bool b;
                 if (map.TryGetValue("AutoRead", out v) && bool.TryParse(v, out b)) s.AutoRead = b;
                 if (map.TryGetValue("LabelMap", out v)) s.LabelMap = v;
+                if (map.TryGetValue("ExpectedText", out v)) s.ExpectedText = v;
+                float f;
+                if (map.TryGetValue("VerifyPassScore", out v) && float.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out f))
+                    s.VerifyPassScore = f;
                 if (map.TryGetValue("Roi", out v))
                 {
                     string[] p = v.Split(',');
@@ -83,6 +93,8 @@ namespace DLReadingTest
                 sb.AppendLine("Confidence=" + Confidence.ToString(CultureInfo.InvariantCulture));
                 sb.AppendLine("AutoRead=" + AutoRead);
                 sb.AppendLine("LabelMap=" + (LabelMap ?? ""));
+                sb.AppendLine("ExpectedText=" + (ExpectedText ?? ""));
+                sb.AppendLine("VerifyPassScore=" + VerifyPassScore.ToString(CultureInfo.InvariantCulture));
                 File.WriteAllText(FilePath, sb.ToString(), Encoding.UTF8);
             }
             catch

@@ -29,6 +29,10 @@ namespace DLReadingTest
         private Bitmap _current;
         private bool _busy;
 
+        // 마지막으로 누른 동작 (자동 실행 시 반복): false = 읽기, true = 검증
+        private bool _verifyMode;
+        private readonly VerifyOptions _verifyOptions = new VerifyOptions();
+
         public MainForm()
         {
             InitializeComponent();
@@ -41,6 +45,8 @@ namespace DLReadingTest
             numInterval.Value = Math.Max(numInterval.Minimum, Math.Min(numInterval.Maximum, _settings.IntervalMs));
             numConf.Value = Math.Max(numConf.Minimum, Math.Min(numConf.Maximum, _settings.Confidence));
             chkAutoRead.Checked = _settings.AutoRead;
+            txtExpected.Text = _settings.ExpectedText ?? "";
+            _verifyOptions.PassScore = _settings.VerifyPassScore;
             timerRotate.Interval = (int)numInterval.Value;
 
             // 모델: 설정에 저장된 경로 -> 실행 폴더\Models\*.onnx 순서로 찾음
@@ -65,6 +71,7 @@ namespace DLReadingTest
             _settings.IntervalMs = (int)numInterval.Value;
             _settings.Confidence = numConf.Value;
             _settings.AutoRead = chkAutoRead.Checked;
+            _settings.ExpectedText = txtExpected.Text;
             _settings.Roi = viewer.Roi;
             _settings.Save();
 
@@ -188,7 +195,7 @@ namespace DLReadingTest
             UpdateRoiStatus();
 
             if (chkAutoRead.Checked && _detector != null)
-                await ReadAsync();
+                await RunCurrentModeAsync();
         }
 
         /// <summary>파일을 잠그지 않도록 메모리로 복사해서 연다.</summary>
@@ -297,17 +304,70 @@ namespace DLReadingTest
         // ================================================================== 읽기
         private async void btnRead_Click(object sender, EventArgs e)
         {
+            _verifyMode = false;
             await ReadAsync();
         }
 
+        private async void btnVerify_Click(object sender, EventArgs e)
+        {
+            _verifyMode = true;
+            await VerifyAsync();
+        }
+
+        /// <summary>자동 실행(이미지 바뀔 때)은 마지막으로 누른 동작(읽기/검증)을 반복한다.</summary>
+        private Task RunCurrentModeAsync()
+        {
+            return _verifyMode ? VerifyAsync() : ReadAsync();
+        }
+
+        // ------------------------------------------------------------------ 읽기
         private async Task ReadAsync()
         {
+            List<Detection> dets = await DetectAsync((float)numConf.Value);
+            if (dets != null) ShowResults(dets);
+        }
+
+        // ------------------------------------------------------------------ 검증
+        private async Task VerifyAsync()
+        {
             if (_busy || _current == null) return;
+            if (_detector != null)
+            {
+                string[] expected = TextVerifier.ParseExpected(txtExpected.Text, _detector.ClassNames, _detector.LabelMap);
+                if (expected.Length == 0)
+                {
+                    StopPlay();
+                    MessageBox.Show(this, "검증할 문자를 입력하세요.\r\n줄은 쉼표(,)로 구분합니다.\r\n\r\n예: GWTB017P, 2030.03.16",
+                        "검증할 문자 없음", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    txtExpected.Focus();
+                    return;
+                }
+
+                // 검증은 기대 글자의 점수가 낮아도 찾을 수 있도록 후보를 낮은 기준으로 넓게 검출
+                YoloDetector detector = _detector;
+                List<Detection> candidates = await DetectAsync(_verifyOptions.CandidateScore);
+                if (candidates == null) return;
+                VerifyResult result = TextVerifier.Verify(candidates, expected, detector.ClassNames, detector.LabelMap, _verifyOptions);
+                ShowVerifyResult(result);
+            }
+            else
+            {
+                await DetectAsync(0f); // 모델 없음 안내
+            }
+        }
+
+        /// <summary>
+        /// 현재 이미지의 ROI 영역에서 글자를 검출한다 (백그라운드 실행).
+        /// 실패했거나 읽는 동안 이미지가 바뀌면 null.
+        /// </summary>
+        private async Task<List<Detection>> DetectAsync(float conf)
+        {
+            if (_busy || _current == null) return null;
             if (_detector == null)
             {
                 MessageBox.Show(this, "먼저 [모델 열기] 로 YOLO ONNX 모델을 불러오세요.", "모델 없음",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
+                return null;
             }
 
             var full = new Rectangle(0, 0, _current.Width, _current.Height);
@@ -318,7 +378,6 @@ namespace DLReadingTest
             Bitmap crop = _current.Clone(roi, PixelFormat.Format24bppRgb);
             Bitmap source = _current;
             YoloDetector detector = _detector;
-            float conf = (float)numConf.Value;
 
             _busy = true;
             UpdateButtons();
@@ -330,15 +389,16 @@ namespace DLReadingTest
                     using (crop) return detector.Detect(crop, roi.Location, conf, NmsIou);
                 });
                 sw.Stop();
-                if (!ReferenceEquals(source, _current)) return; // 읽는 동안 이미지가 바뀜
-                ShowResults(dets);
+                if (!ReferenceEquals(source, _current)) return null; // 읽는 동안 이미지가 바뀜
                 lblStatusTime.Text = string.Format("{0} ms", sw.ElapsedMilliseconds);
+                return dets;
             }
             catch (Exception ex)
             {
                 StopPlay();
                 lblStatusTime.Text = "읽기 실패";
                 MessageBox.Show(this, ex.Message, "추론 오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return null;
             }
             finally
             {
@@ -353,6 +413,8 @@ namespace DLReadingTest
             string[] lines = TextAssembler.Assemble(dets, out ordered);
 
             viewer.Detections = ordered;
+            grpResult.Text = "읽은 결과";
+            txtResult.ForeColor = Color.Lime;
             txtResult.Text = lines.Length == 0 ? "(인식된 문자 없음)" : string.Join(Environment.NewLine, lines);
 
             gridResult.SuspendLayout();
@@ -368,8 +430,62 @@ namespace DLReadingTest
                     Math.Round(d.Box.X),
                     Math.Round(d.Box.Y),
                     Math.Round(d.Box.Width),
-                    Math.Round(d.Box.Height));
+                    Math.Round(d.Box.Height),
+                    "",
+                    "");
             }
+            gridResult.ClearSelection();
+            gridResult.ResumeLayout();
+        }
+
+        private void ShowVerifyResult(VerifyResult result)
+        {
+            // 결과 문자열: OK 자리는 기대 문자, 다른 문자는 읽은 글자, 점수 낮음은 ?, 없음은 _
+            var text = new List<string> { result.Ok ? "검증 OK" : "검증 NG" };
+            foreach (LineResult line in result.Lines)
+                text.Add(string.Format(CultureInfo.InvariantCulture, "{0}  {1} {2:0.00}",
+                    line.DisplayText, line.Ok ? "OK" : "NG", line.MinScore));
+            grpResult.Text = "검증 결과 (줄 끝 숫자 = 가장 낮은 자리 점수)";
+            txtResult.ForeColor = result.Ok ? Color.Lime : Color.Red;
+            txtResult.Text = string.Join(Environment.NewLine, text);
+
+            // 화면 표시: 자리마다 기대 문자를 초록(OK) / 빨강(NG), 못 찾은 자리는 추정 위치에 점선
+            var shown = new List<Detection>();
+            gridResult.SuspendLayout();
+            gridResult.Rows.Clear();
+            int row = 0;
+            foreach (CharResult c in result.AllChars)
+            {
+                shown.Add(new Detection
+                {
+                    ClassId = -1,
+                    Label = c.Expected.ToString(),
+                    Confidence = c.Score,
+                    Box = c.Box,
+                    Line = c.Line,
+                    Estimated = c.Estimated,
+                    DisplayColor = c.Ok ? Color.Lime : Color.Red
+                });
+
+                bool hasBox = c.Box.Width > 0 && c.Box.Height > 0;
+                int r = gridResult.Rows.Add(
+                    ++row,
+                    c.Line + 1,
+                    c.Expected.ToString(),
+                    c.Detection == null ? "-" : c.Score.ToString("0.000", CultureInfo.InvariantCulture),
+                    hasBox ? (object)Math.Round(c.Box.X) : "",
+                    hasBox ? (object)Math.Round(c.Box.Y) : "",
+                    hasBox ? (object)Math.Round(c.Box.Width) : "",
+                    hasBox ? (object)Math.Round(c.Box.Height) : "",
+                    c.Ok ? "OK" : "NG",
+                    c.Reason);
+                if (!c.Ok)
+                {
+                    gridResult.Rows[r].DefaultCellStyle.BackColor = Color.MistyRose;
+                    gridResult.Rows[r].DefaultCellStyle.ForeColor = Color.DarkRed;
+                }
+            }
+            viewer.Detections = shown;
             gridResult.ClearSelection();
             gridResult.ResumeLayout();
         }
@@ -378,6 +494,7 @@ namespace DLReadingTest
         {
             viewer.Detections = null;
             txtResult.Text = "";
+            txtResult.ForeColor = Color.Lime;
             gridResult.Rows.Clear();
             lblStatusTime.Text = "";
         }
@@ -395,6 +512,7 @@ namespace DLReadingTest
             btnNext.Enabled = hasFiles;
             btnPlay.Enabled = hasFiles;
             btnRead.Enabled = !_busy && _current != null && _detector != null;
+            btnVerify.Enabled = btnRead.Enabled;
             btnOpenModel.Enabled = !_busy;
         }
 
@@ -405,6 +523,13 @@ namespace DLReadingTest
             {
                 case Keys.F5:
                     btnRead.PerformClick();
+                    return true;
+                case Keys.F6:
+                    btnVerify.PerformClick();
+                    return true;
+                case Keys.Enter:
+                    if (ActiveControl != txtExpected) break;
+                    btnVerify.PerformClick();
                     return true;
                 case Keys.Left:
                     if (typing) break;

@@ -11,3 +11,5 @@ sample_09.png	RGDI8509	2029.11.06	인쇄 문질림
 sample_10.png	GWTB016P	2029.12.18	인쇄 문질림
 sample_11.png	RLS1WN9	2031.06.27	인쇄 문질림
 sample_12.png	43MTY3H	2028.04.20	인쇄 문질림
+real_2025-05-28_10-09-37.bmp	GWTB017P	2030.03.16	실제
+real_2025-05-28_10-12-15.bmp	GWTB016P	2030.03.12	실제

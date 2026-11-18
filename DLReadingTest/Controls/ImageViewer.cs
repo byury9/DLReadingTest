@@ -313,11 +313,15 @@ namespace DLReadingTest.Controls
             for (int i = 0; i < _detections.Count; i++)
             {
                 Detection d = _detections[i];
+                if (d.Box.Width <= 0 || d.Box.Height <= 0) continue; // 위치 없음 (표에만 표시)
                 RectangleF br = ImageToScreen(d.Box);
                 bool hl = i == _highlightIndex;
-                Color c = hl ? Color.Magenta : ColorForConfidence(d.Confidence);
+                Color c = hl ? Color.Magenta : (d.DisplayColor ?? ColorForConfidence(d.Confidence));
                 using (var pen = new Pen(c, hl ? 3f : 2f))
+                {
+                    if (d.Estimated) pen.DashStyle = DashStyle.Dash; // 못 찾은 자리(추정 위치)
                     g.DrawRectangle(pen, br.X, br.Y, br.Width, br.Height);
+                }
                 DrawLabel(g, d.Label, new PointF(br.X, br.Y), c, Color.Black, above: true);
             }
         }

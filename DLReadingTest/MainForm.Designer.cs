@@ -47,6 +47,9 @@
             this.chkAutoRead = new System.Windows.Forms.CheckBox();
             this.lblConf = new System.Windows.Forms.Label();
             this.numConf = new System.Windows.Forms.NumericUpDown();
+            this.lblExpected = new System.Windows.Forms.Label();
+            this.txtExpected = new System.Windows.Forms.TextBox();
+            this.btnVerify = new System.Windows.Forms.Button();
             this.split = new System.Windows.Forms.SplitContainer();
             this.viewer = new DLReadingTest.Controls.ImageViewer();
             this.gridResult = new System.Windows.Forms.DataGridView();
@@ -58,6 +61,8 @@
             this.colY = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.colW = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.colH = new System.Windows.Forms.DataGridViewTextBoxColumn();
+            this.colJudge = new System.Windows.Forms.DataGridViewTextBoxColumn();
+            this.colNote = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.grpResult = new System.Windows.Forms.GroupBox();
             this.txtResult = new System.Windows.Forms.TextBox();
             this.statusStrip = new System.Windows.Forms.StatusStrip();
@@ -99,11 +104,14 @@
             this.flowTop.Controls.Add(this.chkAutoRead);
             this.flowTop.Controls.Add(this.lblConf);
             this.flowTop.Controls.Add(this.numConf);
+            this.flowTop.Controls.Add(this.lblExpected);
+            this.flowTop.Controls.Add(this.txtExpected);
+            this.flowTop.Controls.Add(this.btnVerify);
             this.flowTop.Dock = System.Windows.Forms.DockStyle.Top;
             this.flowTop.Location = new System.Drawing.Point(0, 0);
             this.flowTop.Name = "flowTop";
             this.flowTop.Padding = new System.Windows.Forms.Padding(4);
-            this.flowTop.Size = new System.Drawing.Size(1264, 42);
+            this.flowTop.Size = new System.Drawing.Size(1264, 76);
             this.flowTop.TabIndex = 0;
             //
             // btnOpenFolder
@@ -270,12 +278,42 @@
             this.numConf.Size = new System.Drawing.Size(60, 21);
             this.numConf.TabIndex = 15;
             this.numConf.Value = new decimal(new int[] { 25, 0, 0, 131072 });
+            this.flowTop.SetFlowBreak(this.numConf, true);
+            //
+            // lblExpected
+            //
+            this.lblExpected.Location = new System.Drawing.Point(7, 41);
+            this.lblExpected.Name = "lblExpected";
+            this.lblExpected.Size = new System.Drawing.Size(84, 28);
+            this.lblExpected.TabIndex = 16;
+            this.lblExpected.Text = "검증할 문자";
+            this.lblExpected.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
+            //
+            // txtExpected
+            //
+            this.txtExpected.Font = new System.Drawing.Font("Consolas", 11F);
+            this.txtExpected.Location = new System.Drawing.Point(97, 43);
+            this.txtExpected.Margin = new System.Windows.Forms.Padding(3, 5, 3, 3);
+            this.txtExpected.Name = "txtExpected";
+            this.txtExpected.Size = new System.Drawing.Size(300, 25);
+            this.txtExpected.TabIndex = 17;
+            //
+            // btnVerify
+            //
+            this.btnVerify.Font = new System.Drawing.Font("맑은 고딕", 9F, System.Drawing.FontStyle.Bold);
+            this.btnVerify.Location = new System.Drawing.Point(403, 41);
+            this.btnVerify.Name = "btnVerify";
+            this.btnVerify.Size = new System.Drawing.Size(80, 28);
+            this.btnVerify.TabIndex = 18;
+            this.btnVerify.Text = "검증 (F6)";
+            this.btnVerify.UseVisualStyleBackColor = true;
+            this.btnVerify.Click += new System.EventHandler(this.btnVerify_Click);
             //
             // split
             //
             this.split.Dock = System.Windows.Forms.DockStyle.Fill;
             this.split.FixedPanel = System.Windows.Forms.FixedPanel.Panel2;
-            this.split.Location = new System.Drawing.Point(0, 42);
+            this.split.Location = new System.Drawing.Point(0, 76);
             this.split.Name = "split";
             //
             // split.Panel1
@@ -286,8 +324,8 @@
             //
             this.split.Panel2.Controls.Add(this.gridResult);
             this.split.Panel2.Controls.Add(this.grpResult);
-            this.split.Size = new System.Drawing.Size(1264, 697);
-            this.split.SplitterDistance = 900;
+            this.split.Size = new System.Drawing.Size(1264, 663);
+            this.split.SplitterDistance = 840;
             this.split.TabIndex = 1;
             //
             // viewer
@@ -298,7 +336,7 @@
             this.viewer.ForeColor = System.Drawing.Color.White;
             this.viewer.Location = new System.Drawing.Point(0, 0);
             this.viewer.Name = "viewer";
-            this.viewer.Size = new System.Drawing.Size(900, 697);
+            this.viewer.Size = new System.Drawing.Size(840, 663);
             this.viewer.TabIndex = 0;
             this.viewer.RoiChanged += new System.EventHandler(this.viewer_RoiChanged);
             this.viewer.ImageMouseMove += new System.EventHandler<DLReadingTest.Controls.ImageMouseEventArgs>(this.viewer_ImageMouseMove);
@@ -319,7 +357,9 @@
             this.colX,
             this.colY,
             this.colW,
-            this.colH});
+            this.colH,
+            this.colJudge,
+            this.colNote});
             this.gridResult.Dock = System.Windows.Forms.DockStyle.Fill;
             this.gridResult.Location = new System.Drawing.Point(0, 120);
             this.gridResult.MultiSelect = false;
@@ -327,7 +367,7 @@
             this.gridResult.ReadOnly = true;
             this.gridResult.RowHeadersVisible = false;
             this.gridResult.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
-            this.gridResult.Size = new System.Drawing.Size(360, 577);
+            this.gridResult.Size = new System.Drawing.Size(420, 543);
             this.gridResult.TabIndex = 1;
             this.gridResult.SelectionChanged += new System.EventHandler(this.gridResult_SelectionChanged);
             //
@@ -390,6 +430,20 @@
             this.colH.Name = "colH";
             this.colH.ReadOnly = true;
             //
+            // colJudge
+            //
+            this.colJudge.FillWeight = 50F;
+            this.colJudge.HeaderText = "판정";
+            this.colJudge.Name = "colJudge";
+            this.colJudge.ReadOnly = true;
+            //
+            // colNote
+            //
+            this.colNote.FillWeight = 140F;
+            this.colNote.HeaderText = "비고";
+            this.colNote.Name = "colNote";
+            this.colNote.ReadOnly = true;
+            //
             // grpResult
             //
             this.grpResult.Controls.Add(this.txtResult);
@@ -397,7 +451,7 @@
             this.grpResult.Location = new System.Drawing.Point(0, 0);
             this.grpResult.Name = "grpResult";
             this.grpResult.Padding = new System.Windows.Forms.Padding(6);
-            this.grpResult.Size = new System.Drawing.Size(360, 120);
+            this.grpResult.Size = new System.Drawing.Size(420, 120);
             this.grpResult.TabIndex = 0;
             this.grpResult.TabStop = false;
             this.grpResult.Text = "읽은 결과";
@@ -413,7 +467,7 @@
             this.txtResult.Name = "txtResult";
             this.txtResult.ReadOnly = true;
             this.txtResult.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
-            this.txtResult.Size = new System.Drawing.Size(348, 94);
+            this.txtResult.Size = new System.Drawing.Size(408, 94);
             this.txtResult.TabIndex = 0;
             //
             // statusStrip
@@ -525,6 +579,9 @@
         private System.Windows.Forms.CheckBox chkAutoRead;
         private System.Windows.Forms.Label lblConf;
         private System.Windows.Forms.NumericUpDown numConf;
+        private System.Windows.Forms.Label lblExpected;
+        private System.Windows.Forms.TextBox txtExpected;
+        private System.Windows.Forms.Button btnVerify;
         private System.Windows.Forms.SplitContainer split;
         private Controls.ImageViewer viewer;
         private System.Windows.Forms.DataGridView gridResult;
@@ -536,6 +593,8 @@
         private System.Windows.Forms.DataGridViewTextBoxColumn colY;
         private System.Windows.Forms.DataGridViewTextBoxColumn colW;
         private System.Windows.Forms.DataGridViewTextBoxColumn colH;
+        private System.Windows.Forms.DataGridViewTextBoxColumn colJudge;
+        private System.Windows.Forms.DataGridViewTextBoxColumn colNote;
         private System.Windows.Forms.GroupBox grpResult;
         private System.Windows.Forms.TextBox txtResult;
         private System.Windows.Forms.StatusStrip statusStrip;
