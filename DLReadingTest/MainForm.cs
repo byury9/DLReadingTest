@@ -33,11 +33,11 @@ namespace DLReadingTest
         private bool _verifyMode;
         private readonly VerifyOptions _verifyOptions = new VerifyOptions();
 
-        // 마지막 검증의 글자 후보 (검증 기준만 바꿨을 때 추론 없이 바로 다시 판정하기 위해 보관)
-        private List<Detection> _lastCandidates;
-        private Bitmap _lastCandidatesImage;
-        private Rectangle _lastCandidatesRoi;
-        private YoloDetector _lastCandidatesDetector;
+        // 마지막 검증의 ROI 별 글자 후보 (검증 기준만 바꿨을 때 추론 없이 바로 다시 판정하기 위해 보관)
+        private RoiRun[] _lastRuns;
+        private Bitmap _lastRunsImage;
+        private Rectangle[] _lastRunsRois;
+        private YoloDetector _lastRunsDetector;
 
         public MainForm()
         {
@@ -69,7 +69,7 @@ namespace DLReadingTest
             }
             if (model != null) LoadModel(model, showError: false);
 
-            if (!_settings.Roi.IsEmpty) viewer.Roi = _settings.Roi;
+            viewer.SetRois(_settings.Rois);
             if (!string.IsNullOrEmpty(_settings.LastFolder) && Directory.Exists(_settings.LastFolder))
                 LoadFolder(_settings.LastFolder);
 
@@ -84,7 +84,7 @@ namespace DLReadingTest
             _settings.AutoRead = chkAutoRead.Checked;
             _settings.ExpectedText = txtExpected.Text;
             _settings.VerifyPassScore = (float)numPass.Value;
-            _settings.Roi = viewer.Roi;
+            _settings.Rois = viewer.Rois.ToList();
             _settings.Save();
 
             viewer.Image = null;
@@ -281,31 +281,54 @@ namespace DLReadingTest
         }
 
         // ================================================================== ROI
-        private void chkRoiEdit_CheckedChanged(object sender, EventArgs e)
+        /// <summary>ROI 추가: 기본 영역 (10+n, 10+n, 100, 100), n = 기존 ROI 개수 x 10 (겹치지 않게 조금씩 비켜서 생성)</summary>
+        private void btnAddRoi_Click(object sender, EventArgs e)
         {
-            viewer.RoiEditMode = chkRoiEdit.Checked;
-            chkRoiEdit.BackColor = chkRoiEdit.Checked ? Color.Gold : SystemColors.Control;
-            if (chkRoiEdit.Checked) StopPlay();
+            int n = viewer.Rois.Count * 10;
+            var roi = new Rectangle(10 + n, 10 + n, 100, 100);
+            if (_current != null)
+            {
+                // 이미지가 작으면 이미지 안으로
+                roi.Width = Math.Min(roi.Width, _current.Width);
+                roi.Height = Math.Min(roi.Height, _current.Height);
+                roi.X = Math.Max(0, Math.Min(roi.X, _current.Width - roi.Width));
+                roi.Y = Math.Max(0, Math.Min(roi.Y, _current.Height - roi.Height));
+            }
+            viewer.AddRoi(roi);
+            viewer.Focus();
         }
 
-        private void btnClearRoi_Click(object sender, EventArgs e)
+        private void btnDeleteRoi_Click(object sender, EventArgs e)
         {
-            viewer.Roi = Rectangle.Empty;
+            viewer.DeleteSelectedRoi();
         }
 
-        private void viewer_RoiChanged(object sender, EventArgs e)
+        private void viewer_RoisChanged(object sender, EventArgs e)
         {
             UpdateRoiStatus();
-            _settings.Roi = viewer.Roi;
+            if (_settings != null) _settings.Rois = viewer.Rois.ToList();
             ClearResults();
+        }
+
+        private void viewer_SelectedRoiChanged(object sender, EventArgs e)
+        {
+            UpdateRoiStatus();
+            UpdateButtons();
         }
 
         private void UpdateRoiStatus()
         {
-            Rectangle r = viewer.Roi;
-            lblStatusRoi.Text = r.IsEmpty
-                ? "ROI: 전체"
-                : string.Format("ROI: {0},{1} {2}x{3}", r.X, r.Y, r.Width, r.Height);
+            IReadOnlyList<Rectangle> rois = viewer.Rois;
+            if (rois.Count == 0)
+            {
+                lblStatusRoi.Text = "ROI: 전체";
+                return;
+            }
+            int sel = viewer.SelectedRoiIndex;
+            lblStatusRoi.Text = sel < 0
+                ? string.Format("ROI {0}개", rois.Count)
+                : string.Format("ROI {0}개 | 선택 {1}: {2},{3} {4}x{5}", rois.Count, sel + 1,
+                    rois[sel].X, rois[sel].Y, rois[sel].Width, rois[sel].Height);
         }
 
         private void viewer_ImageMouseMove(object sender, ImageMouseEventArgs e)
@@ -313,7 +336,7 @@ namespace DLReadingTest
             lblStatusMouse.Text = e.InsideImage ? string.Format("X {0}, Y {1}", e.Location.X, e.Location.Y) : "";
         }
 
-        // ================================================================== 읽기
+        // ================================================================== 읽기 / 검증
         private async void btnRead_Click(object sender, EventArgs e)
         {
             _verifyMode = false;
@@ -332,64 +355,102 @@ namespace DLReadingTest
             return _verifyMode ? VerifyAsync() : ReadAsync();
         }
 
+        /// <summary>ROI 하나의 처리 결과</summary>
+        private sealed class RoiRun
+        {
+            /// <summary>ROI 번호 (0부터). -1 = ROI 가 없어서 전체 이미지</summary>
+            public int Index;
+            /// <summary>실제 처리 영역 (이미지 안으로 잘린 ROI)</summary>
+            public Rectangle Region;
+            public List<Detection> Candidates;
+            // 읽기 결과
+            public string[] Lines;
+            public List<Detection> Ordered;
+            // 검증 결과
+            public VerifyResult Verify;
+
+            public string Name { get { return Index < 0 ? "전체" : (Index + 1).ToString(CultureInfo.InvariantCulture); } }
+        }
+
         // ------------------------------------------------------------------ 읽기
         private async Task ReadAsync()
         {
-            List<Detection> dets = await DetectAsync((float)numConf.Value);
-            if (dets != null) ShowResults(dets);
+            RoiRun[] runs = await RunPerRoiAsync((float)numConf.Value, run =>
+            {
+                List<Detection> ordered;
+                run.Lines = TextAssembler.Assemble(run.Candidates, out ordered);
+                run.Ordered = ordered;
+            });
+            if (runs != null) ShowReadResults(runs);
         }
 
         // ------------------------------------------------------------------ 검증
         private async Task VerifyAsync()
         {
             if (_busy || _current == null) return;
-            if (_detector != null)
+            if (_detector == null)
             {
-                string[] expected = TextVerifier.ParseExpected(txtExpected.Text, _detector.ClassNames, _detector.LabelMap);
-                if (expected.Length == 0)
-                {
-                    StopPlay();
-                    MessageBox.Show(this, "검증할 문자를 입력하세요.\r\n줄은 공백이나 쉼표(,)로 구분합니다.\r\n\r\n예: GWTB017P 2030.03.16",
-                        "검증할 문자 없음", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    txtExpected.Focus();
-                    return;
-                }
+                await RunPerRoiAsync(0f, null); // 모델 없음 안내
+                return;
+            }
+            string[] expected = TextVerifier.ParseExpected(txtExpected.Text, _detector.ClassNames, _detector.LabelMap);
+            if (expected.Length == 0)
+            {
+                StopPlay();
+                MessageBox.Show(this, "검증할 문자를 입력하세요.\r\n줄은 공백이나 쉼표(,)로 구분합니다.\r\n\r\n예: GWTB017P 2030.03.16",
+                    "검증할 문자 없음", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                txtExpected.Focus();
+                return;
+            }
 
-                // 검증은 기대 글자의 점수가 낮아도 찾을 수 있도록 후보를 낮은 기준으로 넓게 검출
-                YoloDetector detector = _detector;
-                Rectangle roi = viewer.Roi;
-                List<Detection> candidates = await DetectAsync(_verifyOptions.CandidateScore);
-                if (candidates == null) return;
-                _lastCandidates = candidates;
-                _lastCandidatesImage = _current;
-                _lastCandidatesRoi = roi;
-                _lastCandidatesDetector = detector;
-                VerifyResult result = TextVerifier.Verify(candidates, expected, detector.ClassNames, detector.LabelMap, _verifyOptions);
-                ShowVerifyResult(result);
-            }
-            else
+            // 작업 스레드들이 같은 값을 보도록 기준값을 복사해서 넘김 (실행 중 화면에서 바꿔도 영향 없음)
+            YoloDetector detector = _detector;
+            VerifyOptions opt = CopyVerifyOptions();
+            Rectangle[] rois = viewer.Rois.ToArray();
+            // 검증은 기대 글자의 점수가 낮아도 찾을 수 있도록 후보를 낮은 기준으로 넓게 검출
+            RoiRun[] runs = await RunPerRoiAsync(opt.CandidateScore, run =>
+                run.Verify = TextVerifier.Verify(run.Candidates, expected, detector.ClassNames, detector.LabelMap, opt));
+            if (runs == null) return;
+
+            _lastRuns = runs;
+            _lastRunsImage = _current;
+            _lastRunsRois = rois;
+            _lastRunsDetector = detector;
+            ShowVerifyResults(runs);
+        }
+
+        private VerifyOptions CopyVerifyOptions()
+        {
+            return new VerifyOptions
             {
-                await DetectAsync(0f); // 모델 없음 안내
-            }
+                PassScore = _verifyOptions.PassScore,
+                CandidateScore = _verifyOptions.CandidateScore,
+                WrongScore = _verifyOptions.WrongScore
+            };
         }
 
         /// <summary>검증 기준 변경: 화면의 마지막 검증 결과를 추론 없이 새 기준으로 다시 판정</summary>
         private void numPass_ValueChanged(object sender, EventArgs e)
         {
             _verifyOptions.PassScore = (float)numPass.Value;
-            if (!_verifyMode || _busy || _detector == null || _lastCandidates == null) return;
-            if (!ReferenceEquals(_lastCandidatesImage, _current) || !ReferenceEquals(_lastCandidatesDetector, _detector)) return;
-            if (viewer.Roi != _lastCandidatesRoi) return;
+            if (!_verifyMode || _busy || _detector == null || _lastRuns == null) return;
+            if (!ReferenceEquals(_lastRunsImage, _current) || !ReferenceEquals(_lastRunsDetector, _detector)) return;
+            if (!viewer.Rois.SequenceEqual(_lastRunsRois)) return;
             string[] expected = TextVerifier.ParseExpected(txtExpected.Text, _detector.ClassNames, _detector.LabelMap);
             if (expected.Length == 0) return;
-            ShowVerifyResult(TextVerifier.Verify(_lastCandidates, expected, _detector.ClassNames, _detector.LabelMap, _verifyOptions));
+            VerifyOptions opt = CopyVerifyOptions();
+            foreach (RoiRun run in _lastRuns)
+                run.Verify = TextVerifier.Verify(run.Candidates, expected, _detector.ClassNames, _detector.LabelMap, opt);
+            ShowVerifyResults(_lastRuns);
         }
 
         /// <summary>
-        /// 현재 이미지의 ROI 영역에서 글자를 검출한다 (백그라운드 실행).
-        /// 실패했거나 읽는 동안 이미지가 바뀌면 null.
+        /// ROI 마다 작업을 하나씩 만들어 동시에 실행한다 (ROI 가 없으면 전체 이미지 하나).
+        ///  1. UI 스레드에서 ROI 별로 이미지를 잘라 둔다 (같은 Bitmap 을 여러 스레드가 동시에 만지면 GDI+ 예외가 나므로)
+        ///  2. ROI 별 Task.Run 으로 검출(YoloDetector.Detect, 세션 하나를 공유해도 안전) + 후처리(post)를 병렬 실행
+        ///  3. 모두 끝나면 결과 배열을 돌려준다. 실패했거나 처리 중 이미지가 바뀌면 null.
         /// </summary>
-        private async Task<List<Detection>> DetectAsync(float conf)
+        private async Task<RoiRun[]> RunPerRoiAsync(float conf, Action<RoiRun> post)
         {
             if (_busy || _current == null) return null;
             if (_detector == null)
@@ -400,11 +461,17 @@ namespace DLReadingTest
             }
 
             var full = new Rectangle(0, 0, _current.Width, _current.Height);
-            Rectangle roi = viewer.Roi.IsEmpty ? full : Rectangle.Intersect(viewer.Roi, full);
-            if (roi.Width < 2 || roi.Height < 2) roi = full;
+            IReadOnlyList<Rectangle> rois = viewer.Rois;
+            var runs = new List<RoiRun>();
+            if (rois.Count == 0)
+                runs.Add(new RoiRun { Index = -1, Region = full });
+            else
+                for (int i = 0; i < rois.Count; i++)
+                    runs.Add(new RoiRun { Index = i, Region = Rectangle.Intersect(rois[i], full) });
 
-            // 화면 그리기와 동시에 같은 Bitmap 에 접근하지 않도록 ROI 를 UI 스레드에서 복사
-            Bitmap crop = _current.Clone(roi, PixelFormat.Format24bppRgb);
+            Bitmap[] crops = runs.Select(r => r.Region.Width >= 2 && r.Region.Height >= 2
+                ? _current.Clone(r.Region, PixelFormat.Format24bppRgb)
+                : null).ToArray(); // 이미지 밖에 있는 ROI 는 null (결과 없음)
             Bitmap source = _current;
             YoloDetector detector = _detector;
 
@@ -413,14 +480,27 @@ namespace DLReadingTest
             var sw = Stopwatch.StartNew();
             try
             {
-                List<Detection> dets = await Task.Run(() =>
+                Task[] tasks = runs.Select((run, i) => Task.Run(() =>
                 {
-                    using (crop) return detector.Detect(crop, roi.Location, conf, NmsIou);
-                });
+                    Bitmap crop = crops[i];
+                    if (crop == null)
+                    {
+                        run.Candidates = new List<Detection>();
+                    }
+                    else
+                    {
+                        using (crop) run.Candidates = detector.Detect(crop, run.Region.Location, conf, NmsIou);
+                    }
+                    if (post != null) post(run);
+                })).ToArray();
+                await Task.WhenAll(tasks);
                 sw.Stop();
-                if (!ReferenceEquals(source, _current)) return null; // 읽는 동안 이미지가 바뀜
-                lblStatusTime.Text = string.Format("{0} ms", sw.ElapsedMilliseconds);
-                return dets;
+
+                if (!ReferenceEquals(source, _current)) return null; // 처리하는 동안 이미지가 바뀜
+                lblStatusTime.Text = runs.Count > 1
+                    ? string.Format("{0} ms (ROI {1}개 동시)", sw.ElapsedMilliseconds, runs.Count)
+                    : string.Format("{0} ms", sw.ElapsedMilliseconds);
+                return runs.ToArray();
             }
             catch (Exception ex)
             {
@@ -436,82 +516,120 @@ namespace DLReadingTest
             }
         }
 
-        private void ShowResults(List<Detection> dets)
+        /// <summary>결과창 글꼴: ROI 가 여러 개면 작게 해서 더 많은 줄이 보이게</summary>
+        private void SetResultFont(bool small)
         {
-            List<Detection> ordered;
-            string[] lines = TextAssembler.Assemble(dets, out ordered);
+            float size = small ? 12f : 18f;
+            if (Math.Abs(txtResult.Font.Size - size) > 0.1f)
+                txtResult.Font = new Font(txtResult.Font.FontFamily, size, FontStyle.Bold);
+        }
 
-            viewer.Detections = ordered;
-            grpResult.Text = "읽은 결과";
-            txtResult.ForeColor = Color.Lime;
-            txtResult.Text = lines.Length == 0 ? "(인식된 문자 없음)" : string.Join(Environment.NewLine, lines);
-
+        private void ShowReadResults(RoiRun[] runs)
+        {
+            bool multi = runs.Length > 1;
+            var text = new List<string>();
+            var shown = new List<Detection>();
             gridResult.SuspendLayout();
             gridResult.Rows.Clear();
-            for (int i = 0; i < ordered.Count; i++)
+            foreach (RoiRun run in runs)
             {
-                Detection d = ordered[i];
-                gridResult.Rows.Add(
-                    i + 1,
-                    d.Line + 1,
-                    d.Label,
-                    d.Confidence.ToString("0.000", CultureInfo.InvariantCulture),
-                    Math.Round(d.Box.X),
-                    Math.Round(d.Box.Y),
-                    Math.Round(d.Box.Width),
-                    Math.Round(d.Box.Height),
-                    "",
-                    "");
+                // ROI 가 여러 개면 줄 앞에 ROI 번호 (R1, R2 ...)
+                if (run.Lines.Length == 0)
+                    text.Add(multi ? string.Format("R{0} (없음)", run.Name) : "(인식된 문자 없음)");
+                for (int k = 0; k < run.Lines.Length; k++)
+                    text.Add(multi ? (k == 0 ? "R" + run.Name + " " : new string(' ', run.Name.Length + 2)) + run.Lines[k] : run.Lines[k]);
+
+                foreach (Detection d in run.Ordered)
+                {
+                    shown.Add(d);
+                    gridResult.Rows.Add(
+                        shown.Count,
+                        run.Name,
+                        d.Line + 1,
+                        d.Label,
+                        d.Confidence.ToString("0.000", CultureInfo.InvariantCulture),
+                        Math.Round(d.Box.X),
+                        Math.Round(d.Box.Y),
+                        Math.Round(d.Box.Width),
+                        Math.Round(d.Box.Height),
+                        "",
+                        "");
+                }
             }
+            viewer.Detections = shown;
+            SetResultFont(multi);
+            grpResult.Text = "읽은 결과";
+            txtResult.ForeColor = Color.Lime;
+            txtResult.Text = string.Join(Environment.NewLine, text);
             gridResult.ClearSelection();
             gridResult.ResumeLayout();
         }
 
-        private void ShowVerifyResult(VerifyResult result)
+        private void ShowVerifyResults(RoiRun[] runs)
         {
+            bool multi = runs.Length > 1;
+            int okCount = runs.Count(r => r.Verify.Ok);
+            bool allOk = okCount == runs.Length;
+
             // 결과 문자열: OK 자리는 기대 문자, 다른 문자는 읽은 글자, 점수 낮음은 ?, 없음은 _
-            var text = new List<string> { result.Ok ? "검증 OK" : "검증 NG" };
-            foreach (LineResult line in result.Lines)
-                text.Add(string.Format(CultureInfo.InvariantCulture, "{0}  {1} {2:0.00}",
-                    line.DisplayText, line.Ok ? "OK" : "NG", line.MinScore));
-            grpResult.Text = "검증 결과 (줄 끝 숫자 = 가장 낮은 자리 점수)";
-            txtResult.ForeColor = result.Ok ? Color.Lime : Color.Red;
+            var text = new List<string>();
+            if (multi)
+            {
+                text.Add(string.Format("검증 {0} ({1}/{2})", allOk ? "OK" : "NG", okCount, runs.Length));
+                foreach (RoiRun run in runs)
+                    text.Add(string.Format("R{0} {1} {2}", run.Name, run.Verify.Ok ? "OK" : "NG",
+                        string.Join(" ", run.Verify.Lines.Select(l => l.DisplayText))));
+                grpResult.Text = "검증 결과 (ROI 별)";
+            }
+            else
+            {
+                text.Add(allOk ? "검증 OK" : "검증 NG");
+                foreach (LineResult line in runs[0].Verify.Lines)
+                    text.Add(string.Format(CultureInfo.InvariantCulture, "{0}  {1} {2:0.00}",
+                        line.DisplayText, line.Ok ? "OK" : "NG", line.MinScore));
+                grpResult.Text = "검증 결과 (줄 끝 숫자 = 가장 낮은 자리 점수)";
+            }
+            SetResultFont(multi);
+            txtResult.ForeColor = allOk ? Color.Lime : Color.Red;
             txtResult.Text = string.Join(Environment.NewLine, text);
 
             // 화면 표시: 자리마다 기대 문자를 초록(OK) / 빨강(NG), 못 찾은 자리는 추정 위치에 점선
             var shown = new List<Detection>();
             gridResult.SuspendLayout();
             gridResult.Rows.Clear();
-            int row = 0;
-            foreach (CharResult c in result.AllChars)
+            foreach (RoiRun run in runs)
             {
-                shown.Add(new Detection
+                foreach (CharResult c in run.Verify.AllChars)
                 {
-                    ClassId = -1,
-                    Label = c.Expected.ToString(),
-                    Confidence = c.Score,
-                    Box = c.Box,
-                    Line = c.Line,
-                    Estimated = c.Estimated,
-                    DisplayColor = c.Ok ? Color.Lime : Color.Red
-                });
+                    shown.Add(new Detection
+                    {
+                        ClassId = -1,
+                        Label = c.Expected.ToString(),
+                        Confidence = c.Score,
+                        Box = c.Box,
+                        Line = c.Line,
+                        Estimated = c.Estimated,
+                        DisplayColor = c.Ok ? Color.Lime : Color.Red
+                    });
 
-                bool hasBox = c.Box.Width > 0 && c.Box.Height > 0;
-                int r = gridResult.Rows.Add(
-                    ++row,
-                    c.Line + 1,
-                    c.Expected.ToString(),
-                    c.Detection == null ? "-" : c.Score.ToString("0.000", CultureInfo.InvariantCulture),
-                    hasBox ? (object)Math.Round(c.Box.X) : "",
-                    hasBox ? (object)Math.Round(c.Box.Y) : "",
-                    hasBox ? (object)Math.Round(c.Box.Width) : "",
-                    hasBox ? (object)Math.Round(c.Box.Height) : "",
-                    c.Ok ? "OK" : "NG",
-                    c.Reason);
-                if (!c.Ok)
-                {
-                    gridResult.Rows[r].DefaultCellStyle.BackColor = Color.MistyRose;
-                    gridResult.Rows[r].DefaultCellStyle.ForeColor = Color.DarkRed;
+                    bool hasBox = c.Box.Width > 0 && c.Box.Height > 0;
+                    int r = gridResult.Rows.Add(
+                        shown.Count,
+                        run.Name,
+                        c.Line + 1,
+                        c.Expected.ToString(),
+                        c.Detection == null ? "-" : c.Score.ToString("0.000", CultureInfo.InvariantCulture),
+                        hasBox ? (object)Math.Round(c.Box.X) : "",
+                        hasBox ? (object)Math.Round(c.Box.Y) : "",
+                        hasBox ? (object)Math.Round(c.Box.Width) : "",
+                        hasBox ? (object)Math.Round(c.Box.Height) : "",
+                        c.Ok ? "OK" : "NG",
+                        c.Reason);
+                    if (!c.Ok)
+                    {
+                        gridResult.Rows[r].DefaultCellStyle.BackColor = Color.MistyRose;
+                        gridResult.Rows[r].DefaultCellStyle.ForeColor = Color.DarkRed;
+                    }
                 }
             }
             viewer.Detections = shown;
@@ -542,6 +660,7 @@ namespace DLReadingTest
             btnPlay.Enabled = hasFiles;
             btnRead.Enabled = !_busy && _current != null && _detector != null;
             btnVerify.Enabled = btnRead.Enabled;
+            btnDeleteRoi.Enabled = viewer.SelectedRoiIndex >= 0;
             btnOpenModel.Enabled = !_busy;
         }
 
@@ -572,13 +691,14 @@ namespace DLReadingTest
                     if (typing) break;
                     btnPlay.PerformClick();
                     return true;
+                case Keys.Delete:
+                    if (typing || viewer.SelectedRoiIndex < 0) break;
+                    viewer.DeleteSelectedRoi();
+                    return true;
                 case Keys.Escape:
-                    if (chkRoiEdit.Checked)
-                    {
-                        chkRoiEdit.Checked = false;
-                        return true;
-                    }
-                    break;
+                    if (viewer.SelectedRoiIndex < 0) break;
+                    viewer.SelectedRoiIndex = -1; // 선택 해제
+                    return true;
             }
             return base.ProcessCmdKey(ref msg, keyData);
         }

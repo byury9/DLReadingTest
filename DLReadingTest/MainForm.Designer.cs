@@ -40,8 +40,8 @@
             this.lblInterval = new System.Windows.Forms.Label();
             this.numInterval = new System.Windows.Forms.NumericUpDown();
             this.sep2 = new System.Windows.Forms.Label();
-            this.chkRoiEdit = new System.Windows.Forms.CheckBox();
-            this.btnClearRoi = new System.Windows.Forms.Button();
+            this.btnAddRoi = new System.Windows.Forms.Button();
+            this.btnDeleteRoi = new System.Windows.Forms.Button();
             this.sep3 = new System.Windows.Forms.Label();
             this.btnRead = new System.Windows.Forms.Button();
             this.chkAutoRead = new System.Windows.Forms.CheckBox();
@@ -56,6 +56,7 @@
             this.viewer = new DLReadingTest.Controls.ImageViewer();
             this.gridResult = new System.Windows.Forms.DataGridView();
             this.colIndex = new System.Windows.Forms.DataGridViewTextBoxColumn();
+            this.colRoi = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.colLine = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.colChar = new System.Windows.Forms.DataGridViewTextBoxColumn();
             this.colConf = new System.Windows.Forms.DataGridViewTextBoxColumn();
@@ -100,8 +101,8 @@
             this.flowTop.Controls.Add(this.lblInterval);
             this.flowTop.Controls.Add(this.numInterval);
             this.flowTop.Controls.Add(this.sep2);
-            this.flowTop.Controls.Add(this.chkRoiEdit);
-            this.flowTop.Controls.Add(this.btnClearRoi);
+            this.flowTop.Controls.Add(this.btnAddRoi);
+            this.flowTop.Controls.Add(this.btnDeleteRoi);
             this.flowTop.Controls.Add(this.sep3);
             this.flowTop.Controls.Add(this.btnRead);
             this.flowTop.Controls.Add(this.chkAutoRead);
@@ -209,27 +210,25 @@
             this.sep2.Size = new System.Drawing.Size(2, 28);
             this.sep2.TabIndex = 8;
             //
-            // chkRoiEdit
+            // btnAddRoi
             //
-            this.chkRoiEdit.Appearance = System.Windows.Forms.Appearance.Button;
-            this.chkRoiEdit.Location = new System.Drawing.Point(623, 7);
-            this.chkRoiEdit.Name = "chkRoiEdit";
-            this.chkRoiEdit.Size = new System.Drawing.Size(80, 28);
-            this.chkRoiEdit.TabIndex = 9;
-            this.chkRoiEdit.Text = "ROI 설정";
-            this.chkRoiEdit.TextAlign = System.Drawing.ContentAlignment.MiddleCenter;
-            this.chkRoiEdit.UseVisualStyleBackColor = true;
-            this.chkRoiEdit.CheckedChanged += new System.EventHandler(this.chkRoiEdit_CheckedChanged);
+            this.btnAddRoi.Location = new System.Drawing.Point(623, 7);
+            this.btnAddRoi.Name = "btnAddRoi";
+            this.btnAddRoi.Size = new System.Drawing.Size(80, 28);
+            this.btnAddRoi.TabIndex = 9;
+            this.btnAddRoi.Text = "ROI 추가";
+            this.btnAddRoi.UseVisualStyleBackColor = true;
+            this.btnAddRoi.Click += new System.EventHandler(this.btnAddRoi_Click);
             //
-            // btnClearRoi
+            // btnDeleteRoi
             //
-            this.btnClearRoi.Location = new System.Drawing.Point(709, 7);
-            this.btnClearRoi.Name = "btnClearRoi";
-            this.btnClearRoi.Size = new System.Drawing.Size(80, 28);
-            this.btnClearRoi.TabIndex = 10;
-            this.btnClearRoi.Text = "ROI 해제";
-            this.btnClearRoi.UseVisualStyleBackColor = true;
-            this.btnClearRoi.Click += new System.EventHandler(this.btnClearRoi_Click);
+            this.btnDeleteRoi.Location = new System.Drawing.Point(709, 7);
+            this.btnDeleteRoi.Name = "btnDeleteRoi";
+            this.btnDeleteRoi.Size = new System.Drawing.Size(100, 28);
+            this.btnDeleteRoi.TabIndex = 10;
+            this.btnDeleteRoi.Text = "선택 ROI 삭제";
+            this.btnDeleteRoi.UseVisualStyleBackColor = true;
+            this.btnDeleteRoi.Click += new System.EventHandler(this.btnDeleteRoi_Click);
             //
             // sep3
             //
@@ -366,7 +365,8 @@
             this.viewer.Name = "viewer";
             this.viewer.Size = new System.Drawing.Size(840, 663);
             this.viewer.TabIndex = 0;
-            this.viewer.RoiChanged += new System.EventHandler(this.viewer_RoiChanged);
+            this.viewer.RoisChanged += new System.EventHandler(this.viewer_RoisChanged);
+            this.viewer.SelectedRoiChanged += new System.EventHandler(this.viewer_SelectedRoiChanged);
             this.viewer.ImageMouseMove += new System.EventHandler<DLReadingTest.Controls.ImageMouseEventArgs>(this.viewer_ImageMouseMove);
             //
             // gridResult
@@ -379,6 +379,7 @@
             this.gridResult.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             this.gridResult.Columns.AddRange(new System.Windows.Forms.DataGridViewColumn[] {
             this.colIndex,
+            this.colRoi,
             this.colLine,
             this.colChar,
             this.colConf,
@@ -405,6 +406,13 @@
             this.colIndex.HeaderText = "#";
             this.colIndex.Name = "colIndex";
             this.colIndex.ReadOnly = true;
+            //
+            // colRoi
+            //
+            this.colRoi.FillWeight = 45F;
+            this.colRoi.HeaderText = "ROI";
+            this.colRoi.Name = "colRoi";
+            this.colRoi.ReadOnly = true;
             //
             // colLine
             //
@@ -602,8 +610,8 @@
         private System.Windows.Forms.Label lblInterval;
         private System.Windows.Forms.NumericUpDown numInterval;
         private System.Windows.Forms.Label sep2;
-        private System.Windows.Forms.CheckBox chkRoiEdit;
-        private System.Windows.Forms.Button btnClearRoi;
+        private System.Windows.Forms.Button btnAddRoi;
+        private System.Windows.Forms.Button btnDeleteRoi;
         private System.Windows.Forms.Label sep3;
         private System.Windows.Forms.Button btnRead;
         private System.Windows.Forms.CheckBox chkAutoRead;
@@ -618,6 +626,7 @@
         private Controls.ImageViewer viewer;
         private System.Windows.Forms.DataGridView gridResult;
         private System.Windows.Forms.DataGridViewTextBoxColumn colIndex;
+        private System.Windows.Forms.DataGridViewTextBoxColumn colRoi;
         private System.Windows.Forms.DataGridViewTextBoxColumn colLine;
         private System.Windows.Forms.DataGridViewTextBoxColumn colChar;
         private System.Windows.Forms.DataGridViewTextBoxColumn colConf;

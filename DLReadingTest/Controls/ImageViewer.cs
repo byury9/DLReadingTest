@@ -9,29 +9,39 @@ using DLReadingTest.Yolo;
 namespace DLReadingTest.Controls
 {
     /// <summary>
-    /// 이미지를 창 크기에 맞춰 보여주고, ROI 를 마우스로 그리기/이동/크기조절 하며,
+    /// 이미지를 창 크기에 맞춰 보여주고, 여러 개의 ROI 를 마우스로 선택/이동/크기조절 하며,
     /// 검출 결과(박스 + 읽은 값)를 겹쳐 그리는 컨트롤.
+    ///  - ROI 테두리 선 위: 이동 (커서 ✥)
+    ///  - 선택된 ROI 의 모서리 네모: 크기 조절
+    ///  - ROI 안쪽 클릭: 선택, 빈 곳 클릭: 선택 해제
     /// </summary>
     public class ImageViewer : Control
     {
-        [Flags]
-        private enum Edge { None = 0, Left = 1, Top = 2, Right = 4, Bottom = 8, Move = 16 }
+        private enum Hit { None, Inside, Line, TopLeft, TopRight, BottomLeft, BottomRight }
 
-        private const int HandleTolerance = 6;
+        private const int LineTolerance = 5;   // 테두리 선 판정 폭 (화면 픽셀)
+        private const int CornerTolerance = 7; // 모서리 판정 폭 (화면 픽셀)
+        private const int MinRoiSize = 8;      // ROI 최소 크기 (이미지 픽셀)
+
+        private static readonly Color SelectedRoiColor = Color.Yellow;
+        private static readonly Color RoiColor = Color.DeepSkyBlue;
 
         private Bitmap _image;
-        private Rectangle _roi = Rectangle.Empty;
-        private bool _roiEditMode;
+        private readonly List<Rectangle> _rois = new List<Rectangle>();
+        private int _selected = -1;
         private IList<Detection> _detections = new List<Detection>();
         private int _highlightIndex = -1;
 
         // 드래그 상태
-        private Edge _dragEdge = Edge.None;
-        private bool _drawingNew;
+        private int _dragIndex = -1;
+        private Hit _dragHit = Hit.None;
         private PointF _dragStart;
         private Rectangle _roiAtDragStart;
 
-        public event EventHandler RoiChanged;
+        /// <summary>ROI 추가/삭제/이동/크기 변경 시 (드래그는 마우스를 놓았을 때)</summary>
+        public event EventHandler RoisChanged;
+        /// <summary>선택된 ROI 가 바뀌었을 때</summary>
+        public event EventHandler SelectedRoiChanged;
         public event EventHandler<ImageMouseEventArgs> ImageMouseMove;
 
         public ImageViewer()
@@ -57,30 +67,61 @@ namespace DLReadingTest.Controls
             }
         }
 
-        /// <summary>이미지 좌표계 ROI. Rectangle.Empty 이면 전체 영역.</summary>
+        /// <summary>이미지 좌표계 ROI 목록 (읽기 전용 사본). 비어 있으면 전체 영역을 읽는다.</summary>
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-        public Rectangle Roi
+        public IReadOnlyList<Rectangle> Rois
         {
-            get { return _roi; }
+            get { return _rois.ToArray(); }
+        }
+
+        /// <summary>선택된 ROI 번호 (0부터, -1 = 선택 없음)</summary>
+        [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public int SelectedRoiIndex
+        {
+            get { return _selected; }
             set
             {
-                if (_roi == value) return;
-                _roi = value;
+                int v = value >= 0 && value < _rois.Count ? value : -1;
+                if (v == _selected) return;
+                _selected = v;
                 Invalidate();
-                OnRoiChanged();
+                if (SelectedRoiChanged != null) SelectedRoiChanged(this, EventArgs.Empty);
             }
         }
 
-        [DefaultValue(false), Category("Behavior"), Description("true 이면 마우스 드래그로 ROI 를 그리거나 수정한다.")]
-        public bool RoiEditMode
+        /// <summary>ROI 목록을 통째로 바꾼다 (설정 불러오기 등). 선택은 해제된다.</summary>
+        public void SetRois(IEnumerable<Rectangle> rois)
         {
-            get { return _roiEditMode; }
-            set
-            {
-                _roiEditMode = value;
-                Cursor = value ? Cursors.Cross : Cursors.Default;
-                Invalidate();
-            }
+            _rois.Clear();
+            if (rois != null)
+                foreach (Rectangle r in rois)
+                    if (r.Width > 0 && r.Height > 0) _rois.Add(r);
+            _selected = -1;
+            Invalidate();
+            OnRoisChanged();
+            if (SelectedRoiChanged != null) SelectedRoiChanged(this, EventArgs.Empty);
+        }
+
+        /// <summary>ROI 를 추가하고 선택한다. 추가된 번호를 돌려준다.</summary>
+        public int AddRoi(Rectangle roi)
+        {
+            _rois.Add(roi);
+            Invalidate();
+            OnRoisChanged();
+            SelectedRoiIndex = _rois.Count - 1;
+            return _rois.Count - 1;
+        }
+
+        /// <summary>선택된 ROI 를 삭제한다. 삭제했으면 true.</summary>
+        public bool DeleteSelectedRoi()
+        {
+            if (_selected < 0 || _selected >= _rois.Count) return false;
+            _rois.RemoveAt(_selected);
+            _selected = -1;
+            Invalidate();
+            OnRoisChanged();
+            if (SelectedRoiChanged != null) SelectedRoiChanged(this, EventArgs.Empty);
+            return true;
         }
 
         [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -147,37 +188,65 @@ namespace DLReadingTest.Controls
             return new PointF(Math.Max(0, Math.Min(_image.Width, p.X)), Math.Max(0, Math.Min(_image.Height, p.Y)));
         }
 
-        // ------------------------------------------------------------------ 마우스 (ROI 편집)
-        private Edge HitTest(Point p)
+        // ------------------------------------------------------------------ 마우스 (ROI 선택/이동/크기 조절)
+        /// <summary>화면 좌표 p 에 있는 ROI 와 부위. 선택된 ROI 를 먼저, 그다음 나중에 그려진(위에 있는) ROI 순으로 본다.</summary>
+        private int HitTest(Point p, out Hit hit)
         {
-            if (_roi.IsEmpty) return Edge.None;
-            RectangleF r = ImageToScreen(_roi);
-            int t = HandleTolerance;
-            bool inY = p.Y >= r.Top - t && p.Y <= r.Bottom + t;
-            bool inX = p.X >= r.Left - t && p.X <= r.Right + t;
-            Edge e = Edge.None;
-            if (inY && Math.Abs(p.X - r.Left) <= t) e |= Edge.Left;
-            if (inY && Math.Abs(p.X - r.Right) <= t) e |= Edge.Right;
-            if (inX && Math.Abs(p.Y - r.Top) <= t) e |= Edge.Top;
-            if (inX && Math.Abs(p.Y - r.Bottom) <= t) e |= Edge.Bottom;
-            if (e == Edge.None && r.Contains(p)) e = Edge.Move;
-            return e;
+            hit = Hit.None;
+            if (_image == null) return -1;
+            var order = new List<int>();
+            if (_selected >= 0) order.Add(_selected);
+            for (int i = _rois.Count - 1; i >= 0; i--)
+                if (i != _selected) order.Add(i);
+
+            foreach (int i in order)
+            {
+                RectangleF r = ImageToScreen(_rois[i]);
+                if (i == _selected) // 모서리 크기 조절은 선택된 ROI 만
+                {
+                    int c = CornerTolerance;
+                    if (Near(p, r.Left, r.Top, c)) { hit = Hit.TopLeft; return i; }
+                    if (Near(p, r.Right, r.Top, c)) { hit = Hit.TopRight; return i; }
+                    if (Near(p, r.Left, r.Bottom, c)) { hit = Hit.BottomLeft; return i; }
+                    if (Near(p, r.Right, r.Bottom, c)) { hit = Hit.BottomRight; return i; }
+                }
+                int t = LineTolerance;
+                bool inY = p.Y >= r.Top - t && p.Y <= r.Bottom + t;
+                bool inX = p.X >= r.Left - t && p.X <= r.Right + t;
+                if ((inY && (Math.Abs(p.X - r.Left) <= t || Math.Abs(p.X - r.Right) <= t)) ||
+                    (inX && (Math.Abs(p.Y - r.Top) <= t || Math.Abs(p.Y - r.Bottom) <= t)))
+                {
+                    hit = Hit.Line;
+                    return i;
+                }
+            }
+            foreach (int i in order)
+            {
+                if (ImageToScreen(_rois[i]).Contains(p))
+                {
+                    hit = Hit.Inside;
+                    return i;
+                }
+            }
+            return -1;
         }
 
-        private static Cursor CursorFor(Edge e)
+        private static bool Near(Point p, float x, float y, int tol)
         {
-            switch (e)
+            return Math.Abs(p.X - x) <= tol && Math.Abs(p.Y - y) <= tol;
+        }
+
+        private static Cursor CursorFor(Hit h)
+        {
+            switch (h)
             {
-                case Edge.Move: return Cursors.SizeAll;
-                case Edge.Left | Edge.Top:
-                case Edge.Right | Edge.Bottom: return Cursors.SizeNWSE;
-                case Edge.Right | Edge.Top:
-                case Edge.Left | Edge.Bottom: return Cursors.SizeNESW;
-                case Edge.Left:
-                case Edge.Right: return Cursors.SizeWE;
-                case Edge.Top:
-                case Edge.Bottom: return Cursors.SizeNS;
-                default: return Cursors.Cross;
+                case Hit.Line: return Cursors.SizeAll;          // 테두리 선: 이동
+                case Hit.TopLeft:
+                case Hit.BottomRight: return Cursors.SizeNWSE;  // 모서리: 크기 조절
+                case Hit.TopRight:
+                case Hit.BottomLeft: return Cursors.SizeNESW;
+                case Hit.Inside: return Cursors.Hand;            // 안쪽: 클릭하면 선택
+                default: return Cursors.Default;
             }
         }
 
@@ -185,12 +254,17 @@ namespace DLReadingTest.Controls
         {
             base.OnMouseDown(e);
             Focus();
-            if (!_roiEditMode || _image == null || e.Button != MouseButtons.Left) return;
+            if (_image == null || e.Button != MouseButtons.Left) return;
 
-            _dragStart = ClampToImage(ScreenToImage(e.Location));
-            _roiAtDragStart = _roi;
-            _dragEdge = HitTest(e.Location);
-            _drawingNew = _dragEdge == Edge.None;
+            Hit hit;
+            int idx = HitTest(e.Location, out hit);
+            SelectedRoiIndex = idx; // 빈 곳이면 선택 해제
+            if (idx < 0 || hit == Hit.Inside) return;
+
+            _dragIndex = idx;
+            _dragHit = hit;
+            _dragStart = ScreenToImage(e.Location);
+            _roiAtDragStart = _rois[idx];
             Capture = true;
         }
 
@@ -204,34 +278,33 @@ namespace DLReadingTest.Controls
             if (ImageMouseMove != null)
                 ImageMouseMove(this, new ImageMouseEventArgs(inside, Point.Truncate(ip)));
 
-            if (!_roiEditMode) return;
-
-            if (!Capture)
+            if (!Capture || _dragIndex < 0)
             {
-                Cursor = CursorFor(HitTest(e.Location));
+                Hit hit;
+                HitTest(e.Location, out hit);
+                Cursor = CursorFor(hit);
                 return;
             }
 
-            PointF p = ClampToImage(ip);
-            if (_drawingNew)
+            Rectangle r0 = _roiAtDragStart;
+            if (_dragHit == Hit.Line)
             {
-                _roi = RectFromPoints(_dragStart, p);
-            }
-            else if (_dragEdge == Edge.Move)
-            {
-                int dx = (int)Math.Round(p.X - _dragStart.X), dy = (int)Math.Round(p.Y - _dragStart.Y);
-                int x = Math.Max(0, Math.Min(_image.Width - _roiAtDragStart.Width, _roiAtDragStart.X + dx));
-                int y = Math.Max(0, Math.Min(_image.Height - _roiAtDragStart.Height, _roiAtDragStart.Y + dy));
-                _roi = new Rectangle(x, y, _roiAtDragStart.Width, _roiAtDragStart.Height);
+                // 이동: 이미지 밖으로 나가지 않게
+                int dx = (int)Math.Round(ip.X - _dragStart.X), dy = (int)Math.Round(ip.Y - _dragStart.Y);
+                int x = Math.Max(0, Math.Min(Math.Max(0, _image.Width - r0.Width), r0.X + dx));
+                int y = Math.Max(0, Math.Min(Math.Max(0, _image.Height - r0.Height), r0.Y + dy));
+                _rois[_dragIndex] = new Rectangle(x, y, r0.Width, r0.Height);
             }
             else
             {
-                float l = _roiAtDragStart.Left, t = _roiAtDragStart.Top, r = _roiAtDragStart.Right, b = _roiAtDragStart.Bottom;
-                if ((_dragEdge & Edge.Left) != 0) l = p.X;
-                if ((_dragEdge & Edge.Right) != 0) r = p.X;
-                if ((_dragEdge & Edge.Top) != 0) t = p.Y;
-                if ((_dragEdge & Edge.Bottom) != 0) b = p.Y;
-                _roi = RectFromPoints(new PointF(l, t), new PointF(r, b));
+                // 크기 조절: 잡은 모서리만 움직이고 반대쪽 모서리는 고정
+                PointF p = ClampToImage(ip);
+                float l = r0.Left, t = r0.Top, r = r0.Right, b = r0.Bottom;
+                if (_dragHit == Hit.TopLeft || _dragHit == Hit.BottomLeft) l = Math.Min(p.X, r - MinRoiSize);
+                if (_dragHit == Hit.TopRight || _dragHit == Hit.BottomRight) r = Math.Max(p.X, l + MinRoiSize);
+                if (_dragHit == Hit.TopLeft || _dragHit == Hit.TopRight) t = Math.Min(p.Y, b - MinRoiSize);
+                if (_dragHit == Hit.BottomLeft || _dragHit == Hit.BottomRight) b = Math.Max(p.Y, t + MinRoiSize);
+                _rois[_dragIndex] = Rectangle.FromLTRB((int)Math.Round(l), (int)Math.Round(t), (int)Math.Round(r), (int)Math.Round(b));
             }
             Invalidate();
         }
@@ -241,24 +314,16 @@ namespace DLReadingTest.Controls
             base.OnMouseUp(e);
             if (!Capture) return;
             Capture = false;
-            if (_roi.Width < 4 || _roi.Height < 4)
-                _roi = _drawingNew && _roiAtDragStart.IsEmpty ? Rectangle.Empty : _roiAtDragStart; // 너무 작은 드래그는 취소
-            _dragEdge = Edge.None;
-            _drawingNew = false;
+            bool changed = _dragIndex >= 0 && _rois[_dragIndex] != _roiAtDragStart;
+            _dragIndex = -1;
+            _dragHit = Hit.None;
             Invalidate();
-            if (_roi != _roiAtDragStart) OnRoiChanged();
+            if (changed) OnRoisChanged();
         }
 
-        private static Rectangle RectFromPoints(PointF a, PointF b)
+        protected virtual void OnRoisChanged()
         {
-            int x1 = (int)Math.Round(Math.Min(a.X, b.X)), y1 = (int)Math.Round(Math.Min(a.Y, b.Y));
-            int x2 = (int)Math.Round(Math.Max(a.X, b.X)), y2 = (int)Math.Round(Math.Max(a.Y, b.Y));
-            return Rectangle.FromLTRB(x1, y1, x2, y2);
-        }
-
-        protected virtual void OnRoiChanged()
-        {
-            if (RoiChanged != null) RoiChanged(this, EventArgs.Empty);
+            if (RoisChanged != null) RoisChanged(this, EventArgs.Empty);
         }
 
         // ------------------------------------------------------------------ 그리기
@@ -282,31 +347,20 @@ namespace DLReadingTest.Controls
             g.PixelOffsetMode = PixelOffsetMode.Default;
             g.SmoothingMode = SmoothingMode.AntiAlias;
 
-            // ROI 바깥을 어둡게
-            if (!_roi.IsEmpty)
+            if (_rois.Count > 0)
             {
-                RectangleF rr = ImageToScreen(_roi);
+                // ROI 바깥을 어둡게
                 using (var region = new Region(dr))
                 using (var shade = new SolidBrush(Color.FromArgb(110, 0, 0, 0)))
                 {
-                    region.Exclude(rr);
+                    foreach (Rectangle roi in _rois) region.Exclude(ImageToScreen(roi));
                     g.FillRegion(shade, region);
                 }
-                using (var pen = new Pen(Color.Yellow, 2f) { DashStyle = _roiEditMode ? DashStyle.Dash : DashStyle.Solid })
-                    g.DrawRectangle(pen, rr.X, rr.Y, rr.Width, rr.Height);
 
-                string roiText = string.Format("ROI {0},{1} {2}x{3}", _roi.X, _roi.Y, _roi.Width, _roi.Height);
-                DrawLabel(g, roiText, new PointF(rr.X, rr.Y), Color.Yellow, Color.Black, above: true);
-
-                if (_roiEditMode)
-                {
-                    foreach (PointF h in new[]
-                             {
-                                 new PointF(rr.Left, rr.Top), new PointF(rr.Right, rr.Top),
-                                 new PointF(rr.Left, rr.Bottom), new PointF(rr.Right, rr.Bottom)
-                             })
-                        g.FillRectangle(Brushes.Yellow, h.X - 4, h.Y - 4, 8, 8);
-                }
+                // 선택 안 된 ROI 먼저, 선택된 ROI 는 맨 위에
+                for (int i = 0; i < _rois.Count; i++)
+                    if (i != _selected) DrawRoi(g, i, false);
+                if (_selected >= 0 && _selected < _rois.Count) DrawRoi(g, _selected, true);
             }
 
             // 검출 결과
@@ -323,6 +377,31 @@ namespace DLReadingTest.Controls
                     g.DrawRectangle(pen, br.X, br.Y, br.Width, br.Height);
                 }
                 DrawLabel(g, d.Label, new PointF(br.X, br.Y), c, Color.Black, above: true);
+            }
+        }
+
+        private void DrawRoi(Graphics g, int i, bool selected)
+        {
+            Rectangle roi = _rois[i];
+            RectangleF rr = ImageToScreen(roi);
+            Color c = selected ? SelectedRoiColor : RoiColor;
+            using (var pen = new Pen(c, selected ? 2.5f : 1.5f))
+                g.DrawRectangle(pen, rr.X, rr.Y, rr.Width, rr.Height);
+
+            string text = selected
+                ? string.Format("ROI {0}  {1},{2} {3}x{4}", i + 1, roi.X, roi.Y, roi.Width, roi.Height)
+                : string.Format("ROI {0}", i + 1);
+            DrawLabel(g, text, new PointF(rr.X, rr.Y), c, Color.Black, above: true);
+
+            if (selected)
+            {
+                using (var b = new SolidBrush(c))
+                    foreach (PointF h in new[]
+                             {
+                                 new PointF(rr.Left, rr.Top), new PointF(rr.Right, rr.Top),
+                                 new PointF(rr.Left, rr.Bottom), new PointF(rr.Right, rr.Bottom)
+                             })
+                        g.FillRectangle(b, h.X - 4, h.Y - 4, 8, 8);
             }
         }
 

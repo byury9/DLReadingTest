@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace DLReadingTest
@@ -12,7 +13,8 @@ namespace DLReadingTest
     {
         public string LastFolder { get; set; }
         public string ModelPath { get; set; }
-        public Rectangle Roi { get; set; }
+        /// <summary>ROI 목록 (이미지 좌표). 비어 있으면 전체 영역</summary>
+        public List<Rectangle> Rois { get; set; }
         public int IntervalMs { get; set; }
         public decimal Confidence { get; set; }
         public bool AutoRead { get; set; }
@@ -26,6 +28,7 @@ namespace DLReadingTest
         public AppSettings()
         {
             IntervalMs = 1000;
+            Rois = new List<Rectangle>();
             Confidence = 0.25m;
             AutoRead = true;
             LabelMap = "O:0";
@@ -65,13 +68,17 @@ namespace DLReadingTest
                 float f;
                 if (map.TryGetValue("VerifyPassScore", out v) && float.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out f))
                     s.VerifyPassScore = f;
-                if (map.TryGetValue("Roi", out v))
+                // Rois=x,y,w,h;x,y,w,h ... (이전 버전의 Roi=x,y,w,h 한 개도 읽음)
+                if (map.TryGetValue("Rois", out v) || map.TryGetValue("Roi", out v))
                 {
-                    string[] p = v.Split(',');
-                    int x, y, w, h;
-                    if (p.Length == 4 && int.TryParse(p[0], out x) && int.TryParse(p[1], out y) &&
-                        int.TryParse(p[2], out w) && int.TryParse(p[3], out h))
-                        s.Roi = new Rectangle(x, y, w, h);
+                    foreach (string item in v.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        string[] p = item.Split(',');
+                        int x, y, w, h;
+                        if (p.Length == 4 && int.TryParse(p[0], out x) && int.TryParse(p[1], out y) &&
+                            int.TryParse(p[2], out w) && int.TryParse(p[3], out h) && w > 0 && h > 0)
+                            s.Rois.Add(new Rectangle(x, y, w, h));
+                    }
                 }
             }
             catch
@@ -88,7 +95,8 @@ namespace DLReadingTest
                 var sb = new StringBuilder();
                 sb.AppendLine("LastFolder=" + (LastFolder ?? ""));
                 sb.AppendLine("ModelPath=" + (ModelPath ?? ""));
-                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "Roi={0},{1},{2},{3}", Roi.X, Roi.Y, Roi.Width, Roi.Height));
+                sb.AppendLine("Rois=" + string.Join(";", (Rois ?? new List<Rectangle>()).Select(r =>
+                    string.Format(CultureInfo.InvariantCulture, "{0},{1},{2},{3}", r.X, r.Y, r.Width, r.Height))));
                 sb.AppendLine("IntervalMs=" + IntervalMs.ToString(CultureInfo.InvariantCulture));
                 sb.AppendLine("Confidence=" + Confidence.ToString(CultureInfo.InvariantCulture));
                 sb.AppendLine("AutoRead=" + AutoRead);
