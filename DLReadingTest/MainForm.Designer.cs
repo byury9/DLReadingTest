@@ -50,6 +50,8 @@
             this.lblExpected = new System.Windows.Forms.Label();
             this.txtExpected = new System.Windows.Forms.TextBox();
             this.btnVerify = new System.Windows.Forms.Button();
+            this.lblPass = new System.Windows.Forms.Label();
+            this.numPass = new System.Windows.Forms.NumericUpDown();
             this.split = new System.Windows.Forms.SplitContainer();
             this.viewer = new DLReadingTest.Controls.ImageViewer();
             this.gridResult = new System.Windows.Forms.DataGridView();
@@ -76,6 +78,7 @@
             this.flowTop.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.numInterval)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.numConf)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numPass)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.split)).BeginInit();
             this.split.Panel1.SuspendLayout();
             this.split.Panel2.SuspendLayout();
@@ -107,6 +110,8 @@
             this.flowTop.Controls.Add(this.lblExpected);
             this.flowTop.Controls.Add(this.txtExpected);
             this.flowTop.Controls.Add(this.btnVerify);
+            this.flowTop.Controls.Add(this.lblPass);
+            this.flowTop.Controls.Add(this.numPass);
             this.flowTop.Dock = System.Windows.Forms.DockStyle.Top;
             this.flowTop.Location = new System.Drawing.Point(0, 0);
             this.flowTop.Name = "flowTop";
@@ -309,6 +314,29 @@
             this.btnVerify.UseVisualStyleBackColor = true;
             this.btnVerify.Click += new System.EventHandler(this.btnVerify_Click);
             //
+            // lblPass
+            //
+            this.lblPass.Location = new System.Drawing.Point(489, 41);
+            this.lblPass.Name = "lblPass";
+            this.lblPass.Size = new System.Drawing.Size(70, 28);
+            this.lblPass.TabIndex = 19;
+            this.lblPass.Text = "검증 기준";
+            this.lblPass.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
+            //
+            // numPass
+            //
+            this.numPass.DecimalPlaces = 2;
+            this.numPass.Increment = new decimal(new int[] { 1, 0, 0, 131072 });
+            this.numPass.Location = new System.Drawing.Point(565, 44);
+            this.numPass.Margin = new System.Windows.Forms.Padding(3, 6, 3, 3);
+            this.numPass.Maximum = new decimal(new int[] { 99, 0, 0, 131072 });
+            this.numPass.Minimum = new decimal(new int[] { 1, 0, 0, 131072 });
+            this.numPass.Name = "numPass";
+            this.numPass.Size = new System.Drawing.Size(60, 21);
+            this.numPass.TabIndex = 20;
+            this.numPass.Value = new decimal(new int[] { 10, 0, 0, 131072 });
+            this.numPass.ValueChanged += new System.EventHandler(this.numPass_ValueChanged);
+            //
             // split
             //
             this.split.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -469,6 +497,7 @@
             this.txtResult.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
             this.txtResult.Size = new System.Drawing.Size(408, 94);
             this.txtResult.TabIndex = 0;
+            this.txtResult.TabStop = false;
             //
             // statusStrip
             //
@@ -546,6 +575,7 @@
             this.flowTop.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.numInterval)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.numConf)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numPass)).EndInit();
             this.split.Panel1.ResumeLayout(false);
             this.split.Panel2.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.split)).EndInit();
@@ -582,6 +612,8 @@
         private System.Windows.Forms.Label lblExpected;
         private System.Windows.Forms.TextBox txtExpected;
         private System.Windows.Forms.Button btnVerify;
+        private System.Windows.Forms.Label lblPass;
+        private System.Windows.Forms.NumericUpDown numPass;
         private System.Windows.Forms.SplitContainer split;
         private Controls.ImageViewer viewer;
         private System.Windows.Forms.DataGridView gridResult;

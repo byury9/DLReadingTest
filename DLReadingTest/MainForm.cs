@@ -33,6 +33,12 @@ namespace DLReadingTest
         private bool _verifyMode;
         private readonly VerifyOptions _verifyOptions = new VerifyOptions();
 
+        // 마지막 검증의 글자 후보 (검증 기준만 바꿨을 때 추론 없이 바로 다시 판정하기 위해 보관)
+        private List<Detection> _lastCandidates;
+        private Bitmap _lastCandidatesImage;
+        private Rectangle _lastCandidatesRoi;
+        private YoloDetector _lastCandidatesDetector;
+
         public MainForm()
         {
             InitializeComponent();
@@ -48,7 +54,8 @@ namespace DLReadingTest
             txtExpected.Text = _settings.ExpectedText ?? "";
             new ToolTip(components).SetToolTip(txtExpected,
                 "인쇄 내용을 줄 순서대로 입력 (줄은 공백이나 쉼표로 구분)\r\n예: GWTB017P 2030.03.16\r\n'.' 은 무시, 영문 O 는 숫자 0 으로 봄");
-            _verifyOptions.PassScore = _settings.VerifyPassScore;
+            numPass.Value = Math.Max(numPass.Minimum, Math.Min(numPass.Maximum, (decimal)_settings.VerifyPassScore));
+            _verifyOptions.PassScore = (float)numPass.Value;
             timerRotate.Interval = (int)numInterval.Value;
 
             // 모델: 설정에 저장된 경로 -> 실행 폴더\Models\*.onnx 순서로 찾음
@@ -74,6 +81,7 @@ namespace DLReadingTest
             _settings.Confidence = numConf.Value;
             _settings.AutoRead = chkAutoRead.Checked;
             _settings.ExpectedText = txtExpected.Text;
+            _settings.VerifyPassScore = (float)numPass.Value;
             _settings.Roi = viewer.Roi;
             _settings.Save();
 
@@ -347,8 +355,13 @@ namespace DLReadingTest
 
                 // 검증은 기대 글자의 점수가 낮아도 찾을 수 있도록 후보를 낮은 기준으로 넓게 검출
                 YoloDetector detector = _detector;
+                Rectangle roi = viewer.Roi;
                 List<Detection> candidates = await DetectAsync(_verifyOptions.CandidateScore);
                 if (candidates == null) return;
+                _lastCandidates = candidates;
+                _lastCandidatesImage = _current;
+                _lastCandidatesRoi = roi;
+                _lastCandidatesDetector = detector;
                 VerifyResult result = TextVerifier.Verify(candidates, expected, detector.ClassNames, detector.LabelMap, _verifyOptions);
                 ShowVerifyResult(result);
             }
@@ -356,6 +369,18 @@ namespace DLReadingTest
             {
                 await DetectAsync(0f); // 모델 없음 안내
             }
+        }
+
+        /// <summary>검증 기준 변경: 화면의 마지막 검증 결과를 추론 없이 새 기준으로 다시 판정</summary>
+        private void numPass_ValueChanged(object sender, EventArgs e)
+        {
+            _verifyOptions.PassScore = (float)numPass.Value;
+            if (!_verifyMode || _busy || _detector == null || _lastCandidates == null) return;
+            if (!ReferenceEquals(_lastCandidatesImage, _current) || !ReferenceEquals(_lastCandidatesDetector, _detector)) return;
+            if (viewer.Roi != _lastCandidatesRoi) return;
+            string[] expected = TextVerifier.ParseExpected(txtExpected.Text, _detector.ClassNames, _detector.LabelMap);
+            if (expected.Length == 0) return;
+            ShowVerifyResult(TextVerifier.Verify(_lastCandidates, expected, _detector.ClassNames, _detector.LabelMap, _verifyOptions));
         }
 
         /// <summary>
