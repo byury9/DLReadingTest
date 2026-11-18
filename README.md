@@ -69,7 +69,21 @@ ROI 없이 전체를 읽으면 박스 10개를 모두 읽고, 결과는 줄 단�
 2. 빌드하면 NuGet 패키지(`Microsoft.ML.OnnxRuntime`)가 자동 복원되고, `Models\*.onnx` 가 출력 폴더로 복사됨
 3. 실행 → `폴더 열기`(예: `samples`) → `ROI 설정` 으로 글자 영역 지정 → `읽기`
 
-> 64비트 전용(x64)입니다. ONNX Runtime 1.20 이상은 Visual C++ 재배포 패키지(2015-2022 x64)가 필요할 수 있습니다.
+### x64 / x86 (32비트)
+
+솔루션에 프로젝트가 두 개 있습니다. 소스와 모델은 같고 플랫폼과 ONNX Runtime 버전만 다릅니다.
+
+| 프로젝트 | 플랫폼 | ONNX Runtime | 실행 파일 |
+|---|---|---|---|
+| `DLReadingTest` | x64 | 1.32.0 (최신) | `DLReadingTest\bin\<구성>\net48\DLReadingTest.exe` |
+| `DLReadingTest.x86` | x86 | **1.22.1** | `DLReadingTest.x86\bin\<구성>\net48\DLReadingTest_x86.exe` |
+
+- ONNX Runtime NuGet 패키지는 **1.23.0 부터 win-x86 DLL 을 배포하지 않아서** x86 은 마지막 지원 버전 1.22.1 을 씁니다
+  (NuGet 은 플랫폼별로 패키지 버전을 바꿀 수 없어 프로젝트를 나눴습니다). 같은 모델로 두 버전의 검증 결과가 같은 것을 확인했습니다.
+- `DLReadingTest.x86` 은 `DLReadingTest` 폴더의 소스(`.cs`)와 `Models` 를 링크해서 씁니다. **코드 수정과 화면 디자인은 `DLReadingTest` 프로젝트에서** 하면 두 쪽에 모두 반영됩니다.
+- 실행할 프로젝트는 솔루션 탐색기에서 `시작 프로젝트로 설정` 으로 고릅니다. 창 제목 끝에 `[x64]` / `[x86]` 이 표시됩니다.
+- 32비트 DLL(구버전 카메라 SDK, 32비트 VisionPro 등)과 함께 써야 할 때만 x86 을 쓰고, 그 외에는 x64 를 권장합니다 (x86 은 다소 느릴 수 있음).
+- Visual C++ 재배포 패키지(2015-2022)가 필요할 수 있습니다 (x64 / x86 각각 해당 플랫폼용).
 
 ## 모델 / 학습 (`training/`)
 
@@ -139,6 +153,7 @@ YOLOv8 / YOLO11(출력 `[1,4+클래스,앵커]`) 형식을 자동 판별합니�
 
 ```
 DLReadingTest.sln
+DLReadingTest.x86/DLReadingTest.x86.csproj  x86 빌드 (DLReadingTest 소스 링크, ONNX Runtime 1.22.1)
 DLReadingTest/
   MainForm.cs / MainForm.Designer.cs   메인 화면 (폴더, 순환, ROI, 읽기, 결과 표)
   Controls/ImageViewer.cs              이미지 표시 + ROI 편집 + 결과 오버레이 컨트롤

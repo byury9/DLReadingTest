@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    x86(32비트) 빌드용 프로젝트.
+    소스와 모델은 DLReadingTest 폴더의 파일을 그대로 링크해서 쓴다 (코드 수정은 DLReadingTest 쪽에서만).
+    ONNX Runtime 은 1.23.0 부터 win-x86 DLL 을 배포하지 않으므로, x86 을 지원하는 마지막 버전 1.22.1 을 쓴다.
+    (NuGet 은 플랫폼별로 패키지 버전을 바꿀 수 없어서 x64 와 프로젝트를 나눴다)
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>7.3</LangVersion>
+    <RootNamespace>DLReadingTest</RootNamespace>
+    <AssemblyName>DLReadingTest_x86</AssemblyName>
+    <PlatformTarget>x86</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Product>DLReadingTest</Product>
+    <Version>1.0.0</Version>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.22.1" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+
+  <!-- DLReadingTest 의 소스 링크 (bin/obj 의 자동 생성 파일 제외) -->
+  <ItemGroup>
+    <Compile Include="..\DLReadingTest\**\*.cs"
+             Exclude="..\DLReadingTest\bin\**;..\DLReadingTest\obj\**"
+             Link="%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- 모델 파일도 DLReadingTest\Models 의 것을 출력 폴더 Models 로 복사 -->
+  <ItemGroup>
+    <None Include="..\DLReadingTest\Models\**\*.onnx;..\DLReadingTest\Models\**\*.txt"
+          Link="Models\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
