@@ -139,9 +139,9 @@ namespace DLReadingTest.Yolo
         private const float MatchBonus = 0.01f;
 
         /// <summary>
-        /// 입력 문자열을 기대 줄 목록으로 바꾼다. 줄 구분은 쉼표(,) / 세로줄(|) / 줄바꿈.
+        /// 입력 문자열을 기대 줄 목록으로 바꾼다. 줄 구분은 공백 / 쉼표(,) / 세로줄(|) / 줄바꿈 / 탭.
         /// 모델이 읽지 않는 문자('.', '-', '/', 공백 등)는 빼고 대문자로 바꾼다.
-        /// 예: "GWTB017P, 2030.03.16" -> ["GWTB017P", "20300316"]
+        /// 예: "GWTB017P, 2030.03.16" 또는 "GWTB017P 2030.03.16" -> ["GWTB017P", "20300316"]
         /// </summary>
         public static string[] ParseExpected(string text, string[] classNames, IDictionary<string, string> labelMap)
         {
@@ -151,7 +151,7 @@ namespace DLReadingTest.Yolo
                 foreach (KeyValuePair<string, string> kv in labelMap) known.Add(kv.Value);
 
             var lines = new List<string>();
-            foreach (string part in text.Split(new[] { ',', '|', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            foreach (string part in text.Split(new[] { ' ', '\t', ',', '|', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
             {
                 var sb = new StringBuilder();
                 foreach (char ch in part.ToUpperInvariant())

@@ -46,6 +46,8 @@ namespace DLReadingTest
             numConf.Value = Math.Max(numConf.Minimum, Math.Min(numConf.Maximum, _settings.Confidence));
             chkAutoRead.Checked = _settings.AutoRead;
             txtExpected.Text = _settings.ExpectedText ?? "";
+            new ToolTip(components).SetToolTip(txtExpected,
+                "인쇄 내용을 줄 순서대로 입력 (줄은 공백이나 쉼표로 구분)\r\n예: GWTB017P 2030.03.16\r\n'.' 은 무시, 영문 O 는 숫자 0 으로 봄");
             _verifyOptions.PassScore = _settings.VerifyPassScore;
             timerRotate.Interval = (int)numInterval.Value;
 
@@ -337,7 +339,7 @@ namespace DLReadingTest
                 if (expected.Length == 0)
                 {
                     StopPlay();
-                    MessageBox.Show(this, "검증할 문자를 입력하세요.\r\n줄은 쉼표(,)로 구분합니다.\r\n\r\n예: GWTB017P, 2030.03.16",
+                    MessageBox.Show(this, "검증할 문자를 입력하세요.\r\n줄은 공백이나 쉼표(,)로 구분합니다.\r\n\r\n예: GWTB017P 2030.03.16",
                         "검증할 문자 없음", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     txtExpected.Focus();
                     return;
