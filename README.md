@@ -189,7 +189,8 @@ DLReadingTest/
   Yolo/Detection.cs
   AppSettings.cs                       ini 설정 저장
   Models/alnum_yolo26n.onnx            학습된 문자 검출 모델
-samples/                               테스트 이미지 (실제 2장 + 합성 12장, answers.txt)
+Porting/CognexYoloVerifier.cs          VisionPro 프로젝트 이식용: PMAlign/Fixture 박스마다 YOLO 검증 + Cognex 그래픽 (README 참고)
+samples/                               테스트 이미지 (실제 2장 + 합성 12장, 현장 565장, answers.txt)
 training/
   gen_label.py                         제품 박스 인쇄용 학습 데이터 생성기 (쓸림 포함)
   gen_synth.py                         범용 합성 데이터 생성기
