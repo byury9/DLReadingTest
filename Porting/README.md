@@ -38,10 +38,10 @@ _yolo.ExpectedBoxCount = 10;       // 박스 수 (PMAlign ApproximateNumberToFin
 
 // 검사
 cogPMalign.Run();
-var cogFixture = (CogFixtureTool)job.VisionTools[EnVarKey.Fixture.ToString()];
-var roiTool    = (CogAffineTransformTool)job.VisionTools["YoloRoi"];
+var roiTool = (CogAffineTransformTool)job.VisionTools["YoloRoi"];
 
-CognexYoloResult yr = _yolo.Run(job.IPOneImageTool.OutputImage, cogPMalign.Results, cogFixture,
+// Fixture 는 내부 전용 툴을 사용 (Job 의 Fixture 를 넘기지 마세요 → 아래 '주의' 참고)
+CognexYoloResult yr = _yolo.Run(job.IPOneImageTool.OutputImage, cogPMalign.Results,
                                 roiTool.Region, "GWTC054P 2031.07.07");
 log.DebugFormat("YOLO {0} 박스 {1}/{2} 크롭 {3}ms 추론 {4}ms", yr.Ok ? "OK" : "NG",
                 yr.FoundCount, yr.ExpectedBoxCount, yr.CropMs, yr.InferMs);
@@ -80,6 +80,10 @@ static void AddResult(Dictionary<object, VisionResultList> result, object key, V
 
 ## 주의
 
+- **Fixture 좌표계 이름**: 내부 전용 Fixture 를 `"YoloFixture"` 좌표계 이름으로 실행합니다 (`FixtureSpaceName`).
+  Job 의 Fixture 와 같은 이름(`"Fixture"` 등)을 쓰면 검사 이미지에 그 좌표계가 **마지막 박스 Pose** 로 남아서,
+  같은 좌표계 이름으로 남아 있던 다른 그래픽(예전 OCRMax 결과 등)이 마지막 박스 위치에 그려집니다 (실제 현장에서 확인된 현상).
+  그래서 `Run(image, pmResults, roi, text)` 처럼 Fixture 를 넘기지 않는 것을 권장합니다.
 - **스레드**: Cognex 툴은 스레드 안전하지 않아 크롭과 그래픽은 `Run` 을 호출한 스레드에서 하고, YOLO 만 병렬로 돌립니다.
   `Run` 은 내부 lock 으로 한 번에 하나씩 실행되므로 카메라가 여러 대면 카메라마다 인스턴스를 만드세요.
   모델은 `new CognexYoloVerifier(sharedDetector)` 로 공유할 수 있습니다 (`InferenceSession.Run` 은 스레드 안전).

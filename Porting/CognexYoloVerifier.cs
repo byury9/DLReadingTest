@@ -106,6 +106,7 @@ namespace DLReadingTest.Yolo
         private readonly YoloDetector _detector;
         private readonly bool _ownsDetector;
         private readonly CogAffineTransformTool _affine = new CogAffineTransformTool();
+        private readonly CogFixtureTool _fixture = new CogFixtureTool();   // 내부 전용 (Job 툴 상태를 건드리지 않음)
         private readonly object _runLock = new object();
 
         private string _expectedText;
@@ -138,6 +139,20 @@ namespace DLReadingTest.Yolo
             SortByPosition = true;
             CreateGraphics = true;
             MaxParallel = Math.Max(1, Environment.ProcessorCount / 2);
+            FixtureSpaceName = "YoloFixture";
+        }
+
+        /// <summary>
+        /// 내부 Fixture 툴의 좌표계 이름 (기본 "YoloFixture").
+        /// <para>
+        /// Job 의 Fixture 와 같은 이름("Fixture" 등)을 쓰면, 검사 이미지에 그 이름의 좌표계가 마지막 박스 Pose 로 남아서
+        /// 같은 좌표계 이름으로 남아 있던 다른 그래픽(예전 OCRMax 결과 등)이 마지막 박스 위치에 그려질 수 있습니다.
+        /// </para>
+        /// </summary>
+        public string FixtureSpaceName
+        {
+            get { return _fixture.RunParams.FixturedSpaceName; }
+            set { _fixture.RunParams.FixturedSpaceName = value; }
         }
 
         public YoloDetector Detector { get { return _detector; } }
@@ -165,15 +180,23 @@ namespace DLReadingTest.Yolo
         /// </summary>
         /// <param name="image">검사 이미지 (예: job.IPOneImageTool.OutputImage)</param>
         /// <param name="pmResults">실행이 끝난 cogPMalign.Results</param>
-        /// <param name="fixture">Fixture 툴 (박스마다 Pose 를 바꿔 다시 실행합니다)</param>
         /// <param name="roi">박스 1개 기준 ROI (Fixture 좌표계). 제조번호 + 날짜 2줄을 모두 포함하도록 잡으세요.</param>
         /// <param name="expectedText">기대 문자열. 줄은 공백 / 줄바꿈 / ',' / '|' 로 구분 (예: "GWTC054P 2031.07.07")</param>
+        public CognexYoloResult Run(ICogImage image, CogPMAlignResults pmResults, CogRectangleAffine roi, string expectedText)
+        {
+            return Run(image, pmResults, null, roi, expectedText);
+        }
+
+        /// <summary>
+        /// 검사 실행 (Fixture 툴 지정)
+        /// </summary>
+        /// <param name="fixture">사용할 Fixture 툴. null 이면 내부 전용 Fixture (권장). Job 의 Fixture 를 넘기면 위 FixtureSpaceName 설명의 문제가 생길 수 있습니다.</param>
         public CognexYoloResult Run(ICogImage image, CogPMAlignResults pmResults, CogFixtureTool fixture,
                                     CogRectangleAffine roi, string expectedText)
         {
             if (image == null) throw new ArgumentNullException("image");
-            if (fixture == null) throw new ArgumentNullException("fixture");
             if (roi == null) throw new ArgumentNullException("roi");
+            if (fixture == null) fixture = _fixture;
 
             lock (_runLock)
             {
@@ -440,6 +463,7 @@ namespace DLReadingTest.Yolo
         public void Dispose()
         {
             _affine.Dispose();
+            _fixture.Dispose();
             if (_ownsDetector) _detector.Dispose();
         }
     }
